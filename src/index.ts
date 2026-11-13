@@ -38,11 +38,15 @@ export type {
   VectorConfig,
   ConsolidationConfig,
   CompetitionConfig,
+  AdaptiveConfig,
   WriteInput,
   Cue,
   Principal,
   Provenance,
 } from './types.js';
+
+export { AdaptiveTuner, ARMS, FEATURE_DIM, normaliseFeatures, mergeOverrides } from './adaptive/tuner.js';
+export type { AdaptiveChoice, ArmStats, Arm, TunerState } from './adaptive/tuner.js';
 
 export { FileStore, PathEscapeError, dirForType } from './store/file-store.js';
 export { serializeRecord, deserializeRecord } from './store/frontmatter.js';

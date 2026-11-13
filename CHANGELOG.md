@@ -4,6 +4,41 @@ All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] — 2026-11-13
+
+自适应调参、真实对话基准、图表与交互演示。
+
+### Added
+
+**自适应调参**（`adaptive.enabled`，默认关闭）
+- LinUCB 上下文盗匪在六个可读参数预设间选择（default / recency-first /
+  relevance-first / goal-first / slow-forgetting / fast-forgetting），不调用模型、不加依赖。
+- `MnemoOptions.adaptive` 开启；`read()` 自动给反馈，`feedback(0..1)` /
+  `endTurn()` 显式结算；`adaptiveStats()` 暴露每臂 pulls 与平均奖励。
+- 策略状态存 `adaptive.json`，可审计、可回放。
+- warm-up 期强制走默认参数，避免一开始就偏离调用方配置。
+
+**真实对话基准**
+- `bench/data/dialogues.jsonl`：20 段对话 / 160 轮 / 44 个事实 / 40 个标注问题，
+  每个事实与问题都标注了对应轮次与正确答案。
+- `bench/dialogue.ts`：naive（每轮重发全文）vs mnemo（指针上下文）同语料对比。
+  当前结果：recall@1 22.5% → 85.0%，recall@3 55.0% → 97.5%，
+  探针比全量检索省 26.5%。
+- `bench/render.mjs`：零依赖生成 4 张 SVG 与交互报告。
+- `bench/data/fetch.mjs`：可选下载 OASST1 样本做交叉检查（自动标注较弱）。
+
+**演示与文档**
+- `docs/benchmark/report.html`：图表 + 分领域表格的交互报告。
+- `docs/demo/index.html`：可拖动天数的遗忘曲线、会话成本回放、探针对比。
+- `BENCHMARK.md`：数据来源、标注规则、指标定义、局限与扩展方式。
+
+### Changed
+
+- `MnemoOptions.config` 类型改为递归 `DeepPartial<MnemoConfig>`。
+- README 基准章节加入真实对话结果、成本曲线与复现命令。
+- `ARCHITECTURE.md` 新增 10.6 自适应调参章节。
+- 测试从 156 增至 163。
+
 ## [0.6.0] — 2026-11-13
 
 情节记忆：事实记的是「什么是真的」，情节记的是「发生过什么」。

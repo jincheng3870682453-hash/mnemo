@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>mnemo · interactive demo</title>
+<style>
+  :root{--bg:#0b1020;--panel:#121a2b;--line:#22304a;--text:#e6edf3;--muted:#8b949e;--green:#34d399;--red:#f87171;--cyan:#22d3ee;--gold:#fbbf24}
+  *{box-sizing:border-box}
+  body{margin:0;color:var(--text);font:14px/1.65 ui-sans-serif,system-ui,"Segoe UI",sans-serif;
+    background:
+      radial-gradient(1100px 520px at 12% -10%, rgba(34,211,238,.13), transparent 60%),
+      radial-gradient(900px 480px at 108% 4%, rgba(167,139,250,.15), transparent 55%),
+      linear-gradient(165deg,#0e1525 0%,#131c31 48%,#0c1220 100%);
+    background-attachment:fixed;}
+  main{max-width:960px;margin:0 auto;padding:44px 20px 64px}
+  h1{font-size:26px;margin:0 0 6px}
+  .sub{color:var(--muted);margin:0 0 26px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px;margin-bottom:16px}
+  h2{font-size:16px;margin:0 0 4px}
+  .hint{color:var(--muted);font-size:12px;margin:0 0 14px}
+  canvas{width:100%;height:220px;display:block;border-radius:8px;background:#0b1017}
+  .row{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:12px}
+  .big{font:700 24px/1.1 ui-monospace,monospace}
+  .muted{color:var(--muted);font-size:12px}
+  input[type=range]{flex:1;min-width:180px;accent-color:var(--cyan)}
+  .bars{display:grid;gap:10px;margin-top:8px}
+  .bar{display:grid;grid-template-columns:140px 1fr 80px;gap:10px;align-items:center}
+  .track{height:12px;background:#0b1017;border-radius:6px;overflow:hidden}
+  .fill{height:100%;border-radius:6px}
+  code{background:#0b1017;border:1px solid var(--line);border-radius:5px;padding:1px 5px;font-family:ui-monospace,monospace;font-size:12px}
+  .foot{color:var(--muted);font-size:12px;margin-top:22px}
+</style>
+</head>
+<body><main>
+  <h1>mnemo · interactive demo</h1>
+  <p class="sub">三条曲线解释这个库的三个主张：忘得慢、放指针、先问记不记得。</p>
+
+  <section class="card">
+    <h2>1 · 幂律遗忘，而不是指数衰减</h2>
+    <p class="hint">R(t) = (1 + t/S)<sup>−0.7</sup>。同一记忆，S 越大忘得越慢（salience 高的 S 更大）。拖动天数看三条曲线的留存。</p>
+    <canvas id="decay"></canvas>
+    <div class="row">
+      <span class="muted">第 <b id="dayLabel">30</b> 天</span>
+      <input id="day" type="range" min="0" max="180" value="30"/>
+    </div>
+    <div class="row" id="decayValues"></div>
+  </section>
+
+  <section class="card">
+    <h2>2 · 会话越长，指针越省</h2>
+    <p class="hint">naive 每轮重发全文，成本随轮数线性上升；mnemo 每轮只放指针，近似恒定。交叉点在 11 轮左右。</p>
+    <canvas id="cost"></canvas>
+    <div class="row">
+      <span class="muted">会话 <b id="turnLabel">16</b> 轮</span>
+      <input id="turns" type="range" min="8" max="128" step="1" value="16"/>
+    </div>
+    <div class="row" id="costValues"></div>
+  </section>
+
+  <section class="card">
+    <h2>3 · 先问“记不记得”，再决定“拿出来”</h2>
+    <p class="hint">40 个问题上的实测。探针是一行，全量检索是一整块 L0 指针。</p>
+    <div class="bars">
+      <div class="bar"><span>feeling-of-knowing</span><div class="track"><div class="fill" style="width:73.5%;background:var(--cyan)"></div></div><span class="big" style="font-size:15px">1,902</span></div>
+      <div class="bar"><span>full recall</span><div class="track"><div class="fill" style="width:100%;background:var(--red)"></div></div><span class="big" style="font-size:15px">2,588</span></div>
+    </div>
+    <p class="hint" style="margin-top:12px">省 26.5%。数字来自 <code>bench/out/report.json</code>（mnemo 自己的估算器）。</p>
+  </section>
+
+  <p class="foot">交互页不调用库，只是把基准数字画出来；曲线公式与 <code>src/memory/decay.ts</code>、<code>bench/dialogue.ts</code> 一致。复现：<code>npm run bench:dialogue && npm run bench:render</code>。</p>
+</main>
+<script>
+const DPR = Math.min(2, window.devicePixelRatio || 1);
+function prep(canvas) {
+  const r = canvas.getBoundingClientRect();
+  canvas.width = r.width * DPR;
+  canvas.height = r.height * DPR;
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  return { ctx, w: r.width, h: r.height };
+}
+
+// ---------- decay ----------
+const SERIES = [
+  { S: 2,  color: '#f87171', label: 'S=2 天（低 salience）' },
+  { S: 10, color: '#fbbf24', label: 'S=10 天' },
+  { S: 40, color: '#34d399', label: 'S=40 天（高 salience）' },
+];
+const retention = (t, S) => Math.min(1, Math.max(0, Math.pow(1 + t / S, -0.7)));
+
+function drawDecay(day) {
+  const cv = document.getElementById('decay');
+  const { ctx, w, h } = prep(cv);
+  const pad = { l: 42, r: 14, t: 14, b: 26 };
+  const xMax = 180, yMax = 1;
+  const X = (t) => pad.l + (t / xMax) * (w - pad.l - pad.r);
+  const Y = (v) => pad.t + (1 - v / yMax) * (h - pad.t - pad.b);
+
+  ctx.clearRect(0, 0, w, h);
+  ctx.strokeStyle = '#21262d'; ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const v = i / 4; const y = Y(v);
+    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(w - pad.r, y); ctx.stroke();
+    ctx.fillStyle = '#8b949e'; ctx.font = '10px ui-monospace,monospace'; ctx.textAlign = 'right';
+    ctx.fillText(v.toFixed(2), pad.l - 6, y + 3);
+  }
+  ctx.textAlign = 'center';
+  ctx.fillText('天', w - pad.r - 6, h - 6);
+
+  for (const s of SERIES) {
+    ctx.beginPath();
+    for (let t = 0; t <= xMax; t += 2) {
+      const x = X(t), y = Y(retention(t, s.S));
+      t === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = s.color; ctx.lineWidth = 2.5; ctx.stroke();
+    // marker at current day
+    const x = X(day), y = Y(retention(day, s.S));
+    ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2);
+    ctx.fillStyle = '#0d1117'; ctx.strokeStyle = s.color; ctx.lineWidth = 2; ctx.fill(); ctx.stroke();
+  }
+  // today line
+  ctx.beginPath(); ctx.moveTo(X(day), pad.t); ctx.lineTo(X(day), h - pad.b);
+  ctx.strokeStyle = '#22d3ee'; ctx.setLineDash([3, 4]); ctx.stroke(); ctx.setLineDash([]);
+  return SERIES.map((s) => ({ ...s, at: retention(day, s.S) }));
+}
+
+// ---------- cost ----------
+const COST = [[8, 136.4, 156.2], [16, 190.1, 156.2], [32, 297.4, 156.2], [64, 512.1, 156.2], [128, 941.5, 156.2]];
+function naiveAt(n) {
+  for (let i = 1; i < COST.length; i++) {
+    if (n <= COST[i][0]) {
+      const [x0, y0] = COST[i - 1], [x1, y1] = COST[i];
+      return y0 + ((n - x0) / (x1 - x0)) * (y1 - y0);
+    }
+  }
+  return COST[COST.length - 1][1];
+}
+function drawCost(turns) {
+  const cv = document.getElementById('cost');
+  const { ctx, w, h } = prep(cv);
+  const pad = { l: 44, r: 14, t: 14, b: 26 };
+  const xMax = 128, yMax = 1000;
+  const X = (n) => pad.l + (n / xMax) * (w - pad.l - pad.r);
+  const Y = (v) => pad.t + (1 - v / yMax) * (h - pad.t - pad.b);
+
+  ctx.clearRect(0, 0, w, h);
+  ctx.strokeStyle = '#21262d'; ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const v = (yMax / 4) * i; const y = Y(v);
+    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(w - pad.r, y); ctx.stroke();
+    ctx.fillStyle = '#8b949e'; ctx.font = '10px ui-monospace,monospace'; ctx.textAlign = 'right';
+    ctx.fillText(String(Math.round(v)), pad.l - 6, y + 3);
+  }
+  ctx.fillStyle = '#8b949e'; ctx.textAlign = 'center';
+  ctx.fillText('轮', w - pad.r - 6, h - 6);
+
+  ctx.beginPath();
+  for (let n = 8; n <= 128; n += 2) {
+    const x = X(n), y = Y(naiveAt(n));
+    n === 8 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.strokeStyle = '#f87171'; ctx.lineWidth = 2.5; ctx.stroke();
+
+  ctx.beginPath(); ctx.moveTo(X(8), Y(156.2)); ctx.lineTo(X(128), Y(156.2));
+  ctx.strokeStyle = '#34d399'; ctx.lineWidth = 2.5; ctx.stroke();
+
+  ctx.beginPath(); ctx.moveTo(X(turns), pad.t); ctx.lineTo(X(turns), h - pad.b);
+  ctx.strokeStyle = '#22d3ee'; ctx.setLineDash([3, 4]); ctx.stroke(); ctx.setLineDash([]);
+
+  return { naive: naiveAt(turns), mnemo: 156.2 };
+}
+
+// ---------- bind ----------
+function renderDecay() {
+  const day = Number(document.getElementById('day').value);
+  document.getElementById('dayLabel').textContent = day;
+  const vals = drawDecay(day);
+  document.getElementById('decayValues').innerHTML = vals
+    .map((v) => `<span class="muted"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${v.color};margin-right:6px"></span>${v.label} · R=${v.at.toFixed(2)}</span>`)
+    .join('');
+}
+function renderCost() {
+  const turns = Number(document.getElementById('turns').value);
+  document.getElementById('turnLabel').textContent = turns;
+  const v = drawCost(turns);
+  document.getElementById('costValues').innerHTML =
+    `<span class="muted">naive <b style="color:var(--red)">${v.naive.toFixed(1)}</b> tok/轮</span>` +
+    `<span class="muted">mnemo <b style="color:var(--green)">${v.mnemo.toFixed(1)}</b> tok/轮</span>` +
+    `<span class="muted">${v.naive > v.mnemo ? 'naive 更贵' : 'mnemo 更贵（短会话固定开销）'}</span>`;
+}
+document.getElementById('day').addEventListener('input', renderDecay);
+document.getElementById('turns').addEventListener('input', renderCost);
+window.addEventListener('resize', () => { renderDecay(); renderCost(); });
+renderDecay(); renderCost();
+</script>
+</body>
+</html>

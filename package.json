@@ -1,6 +1,6 @@
 {
   "name": "mnemo-memory",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Token-thrifty, human-like long-term memory for AI agents. Zero runtime dependencies. Ships an MCP server.",
   "type": "module",
   "main": "./dist/src/index.js",
@@ -39,6 +39,10 @@
     "test": "npm run build && node --test dist/tests/*.test.js",
     "test:only": "node --test dist/tests/*.test.js",
     "bench": "npm run build --silent && node dist/bench/consolidation.js",
+    "bench:dialogue": "npm run build --silent && node dist/bench/dialogue.js",
+    "bench:adaptive": "npm run build --silent && node dist/bench/adaptive.js",
+    "bench:render": "node bench/render.mjs",
+    "bench:all": "npm run bench:dialogue && npm run bench:adaptive && npm run bench:render",
     "mcp": "npm run build --silent && node dist/src/mcp/server.js",
     "cli": "npm run build --silent && node dist/src/cli.js",
     "example": "npm run build --silent && node dist/examples/basic.js",

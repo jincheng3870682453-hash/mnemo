@@ -499,6 +499,39 @@ before asserting detail.*
 
 ---
 
+## 10.6 Adaptive tuning: a bandit, not a model call
+
+The README lists "all decay parameters are hand-tuned" as a limitation. The obvious
+fix — call a model to choose parameters — fails the library's own test: it adds a
+network dependency and latency to the hot path and makes ranking unauditable.
+
+Instead, `adaptive.enabled` turns the *choice among* preset configurations into a
+LinUCB contextual bandit (Li et al., 2010):
+
+    theta_a = A_a^-1 b_a
+    p_a     = theta_a^T x + alpha * sqrt(x^T A_a^-1 x)
+
+- **Arms** are six readable presets (default, recency-first, relevance-first,
+  goal-first, slow-forgetting, fast-forgetting). The bandit cannot invent a policy
+  the author would not defend.
+- **Features** are eight cheap numbers: bias, store size, mean retention, mean
+  salience, query length, pending intentions, suppression share, spare slot.
+- **Reward** is the caller's `feedback(0..1)`. `read()` supplies a conservative
+  heuristic (0.85 when the opened record was in the last recall, 0.25 otherwise);
+  `endTurn()` counts an unused recall as 0.4.
+- **State** lives in `adaptive.json` beside the store, so the policy is inspectable
+  and replayable. `adaptiveStats()` exposes pulls and mean reward per arm.
+
+Default is off, and the warm-up period forces the default arm so the caller's own
+configuration gets a fair sample before the bandit steers.
+
+What it is not: proof of better accuracy. On the dialogue benchmark both fixed and
+adaptive recall are 80% / 97.5% — the corpus does not separate the arms. The honest
+claim is narrower: parameters can now adapt without a model call, and the choice is
+auditable. See `bench/adaptive.ts` and `BENCHMARK.md`.
+
+---
+
 ## 11. What is deliberately not here
 
 | Omitted | Why |
@@ -531,6 +564,7 @@ before asserting detail.*
 | `offload.test.ts` | threshold, paging, traversal rejection |
 | `store.test.ts` | index is disposable, corrupt file isolation, path escapes |
 | `integration.test.ts` | full lifecycle, supersede, hearsay quarantine, token ratio |
+| `adaptive.test.ts` | warm-up forces default arm, reward attribution, state round trip, merge does not mutate |
 
 ---
 

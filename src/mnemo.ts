@@ -15,7 +15,9 @@
 
 import path from 'node:path';
 import type {
+  AdaptiveConfig,
   Cue,
+  DeepPartial,
   MemoryRecord,
   MnemoConfig,
   WriteInput,
@@ -24,10 +26,11 @@ import { mergeConfig } from './types.js';
 import { FileStore, matchSafeName } from './store/file-store.js';
 import { deserializeRecord } from './store/frontmatter.js';
 import { BM25Index } from './index/bm25.js';
+import { AdaptiveTuner, type ArmStats } from './adaptive/tuner.js';
 import { bindAttribution, attributionLabel, decisionEligible } from './memory/attribution.js';
 import { encodeGist, heuristicGist } from './memory/gist.js';
 import { createRecord, indexableText, RecordValidationError } from './memory/record.js';
-import { erodeConfidence, reinforce, tier as retentionTier } from './memory/decay.js';
+import { erodeConfidence, reinforce, retention, tier as retentionTier } from './memory/decay.js';
 import { probeMetamemory, renderProbe, type MetamemoryProbe } from './memory/metamemory.js';
 import { suppressCompetitors } from './memory/competition.js';
 import { coerceCue, harvestCues, mergeCues } from './memory/cues.js';
@@ -45,13 +48,19 @@ import { isValidSlug } from './util/id.js';
 import { nowIso } from './util/time.js';
 
 export interface MnemoOptions {
-  config?: Partial<MnemoConfig>;
+  config?: DeepPartial<MnemoConfig>;
   llm?: LLM;
   /**
    * Optional embedding provider. Without one, `vector.mode` has no effect and
    * retrieval stays lexical. See retrieval/embedder.ts for why that is the default.
    */
   embedder?: Embedder;
+  /**
+   * Convenience override for `config.adaptive`. When enabled, every recall picks
+   * one of a small set of parameter presets with a LinUCB bandit and learns from
+   * feedback. See adaptive/tuner.ts.
+   */
+  adaptive?: Partial<AdaptiveConfig>;
   /** Principal representing the assistant itself. Defaults to `agent:self`. */
   agentPrincipal?: string;
   /** Default principal of the human(s) this agent serves, if there is one. */
@@ -157,6 +166,8 @@ export class Mnemo {
   private index = new BM25Index();
   private vectors = new VectorIndex();
   private records = new Map<string, MemoryRecord>();
+  private adaptiveTuner: AdaptiveTuner | null = null;
+  private lastAdaptive: { arm: number; context: number[]; hits: string[] } | null = null;
 
   private constructor(store: FileStore, config: MnemoConfig, options: MnemoOptions) {
     this.store = store;
@@ -171,10 +182,108 @@ export class Mnemo {
   static async open(root: string, options: MnemoOptions = {}): Promise<Mnemo> {
     const store = new FileStore(root);
     await store.init();
-    const mnemo = new Mnemo(store, mergeConfig(options.config), options);
+    const merged = mergeConfig({
+      ...(options.config ?? {}),
+      adaptive: { ...(options.config?.adaptive ?? {}), ...(options.adaptive ?? {}) },
+    });
+    const mnemo = new Mnemo(store, merged, options);
     await mnemo.reload();
     if (mnemo.vectorEnabled()) await mnemo.warmVectors();
+    if (mnemo.config.adaptive.enabled) await mnemo.initAdaptive();
     return mnemo;
+  }
+
+  // --------------------------------------------------------------- adaptive --
+
+  private adaptiveStatePath(): string {
+    return path.join(this.store.root, this.config.adaptive.stateFile);
+  }
+
+  private async initAdaptive(): Promise<void> {
+    this.adaptiveTuner = await AdaptiveTuner.load(
+      this.adaptiveStatePath(),
+      this.config.adaptive.alpha,
+      this.config.adaptive.warmup,
+    );
+  }
+
+  /** Whether online parameter tuning is active for this store. */
+  adaptiveEnabled(): boolean {
+    return this.adaptiveTuner !== null;
+  }
+
+  /**
+   * Report the bandit's state. This exists so adaptive behaviour is auditable:
+   * every arm's pull count and mean reward, not just the winning parameters.
+   */
+  adaptiveStats(): {
+    enabled: boolean;
+    observations: number;
+    arms: ArmStats[];
+  } {
+    if (!this.adaptiveTuner) return { enabled: false, observations: 0, arms: [] };
+    return {
+      enabled: true,
+      observations: this.adaptiveTuner.observations,
+      arms: this.adaptiveTuner.stats(),
+    };
+  }
+
+  /**
+   * Tell the tuner how the last recall turned out, 0..1.
+   *
+   * Call it after acting on a recall: 1.0 when the memory actually answered the
+   * turn, 0.0 when it was noise. The library cannot infer this without an
+   * answer key, so this is the honest interface — and `read()` supplies a
+   * conservative heuristic automatically (see below).
+   */
+  feedback(reward: number): void {
+    if (!this.adaptiveTuner || !this.lastAdaptive) return;
+    this.adaptiveTuner.update(this.lastAdaptive.arm, this.lastAdaptive.context, reward);
+    this.lastAdaptive = null;
+    void this.saveAdaptiveState();
+  }
+
+  /**
+   * Close the current turn. Any recall that was never adjudicated counts as a
+   * weak negative: the pointers were not used.
+   */
+  endTurn(): void {
+    if (this.lastAdaptive) this.feedback(0.4);
+  }
+
+  private async saveAdaptiveState(): Promise<void> {
+    if (!this.adaptiveTuner) return;
+    try {
+      await this.adaptiveTuner.save(this.adaptiveStatePath());
+    } catch {
+      // A failed policy write must not fail a recall. The in-memory state is
+      // still correct; the next turn tries again.
+    }
+  }
+
+  /**
+   * Feature vector for the bandit.
+   *
+   * Deliberately small and cheap to compute: store size, mean retention, mean
+   * salience, query length, whether intentions are pending, and how much of the
+   * store is competition-suppressed. Normalisation happens in the tuner.
+   */
+  private adaptiveFeatures(query: RetrieveQuery): number[] {
+    const now = new Date();
+    const live = [...this.records.values()].filter((r) => !r.invalidAt);
+    const meanRetention =
+      live.length > 0
+        ? live.reduce((sum, r) => sum + retention(r, now, this.config.decay), 0) / live.length
+        : 0;
+    const meanSalience =
+      live.length > 0 ? live.reduce((sum, r) => sum + r.salience, 0) / live.length / 10 : 0;
+    const queryTokens = estimateTokens(query.query ?? '');
+    const pending = this.pendingLines(now).trim().length > 0 ? 1 : 0;
+    const size = Math.log1p(live.length) / Math.log1p(5000);
+    const suppressed =
+      live.length > 0 ? live.filter((r) => r.suppressedAt !== null).length / live.length : 0;
+    return [1, size, meanRetention, meanSalience, Math.min(1, queryTokens / 64), pending, suppressed, 0.5];
   }
 
   /** Re-read every record from disk and rebuild the indexes. Discards nothing. */
@@ -415,10 +524,20 @@ export class Mnemo {
    * is configured the promise resolves immediately on the lexical path.
    */
   async recall(query: RetrieveQuery = {}): Promise<ScoredMemory[]> {
+    // Adaptive path: choose a parameter preset for this turn, then rank with it.
+    // The live config is never mutated; `applyConfig` returns a merged copy.
+    let effective = this.config;
+    if (this.adaptiveTuner) {
+      const context = this.adaptiveFeatures(query);
+      const choice = this.adaptiveTuner.select(context);
+      effective = this.adaptiveTuner.applyConfig(this.config, choice.arm);
+      this.lastAdaptive = { arm: choice.arm, context, hits: [] };
+    }
+
     const engine = {
       records: [...this.records.values()],
       index: this.index,
-      config: this.config,
+      config: effective,
       pathOf: (name: string): string => {
         const record = this.find(name);
         if (!record) return '';
@@ -442,11 +561,11 @@ export class Mnemo {
     const hits = retrieve(engine, {
       ...query,
       vectorHits,
-      vectorBlend: this.config.vector.blend,
+      vectorBlend: effective.vector.blend,
     });
 
     for (const hit of hits) {
-      reinforce(hit.record, new Date(), this.config.decay);
+      reinforce(hit.record, new Date(), effective.decay);
       void this.store.update(hit.record).catch(() => {
         // A failed access-count update must never fail a read.
       });
@@ -455,12 +574,12 @@ export class Mnemo {
     // Retrieval-induced forgetting: the winner quiets its near-duplicates for a
     // few days. Deliberately weak (see memory/competition.ts) so a real second
     // answer is never lost.
-    if (this.config.competition.enabled && hits.length > 0) {
+    if (effective.competition.enabled && hits.length > 0) {
       const now = new Date();
       const suppressed = suppressCompetitors(
         hits[0].record,
         [...this.records.values()],
-        this.config.competition,
+        effective.competition,
         now,
       );
       for (const record of suppressed) {
@@ -468,6 +587,7 @@ export class Mnemo {
       }
     }
 
+    if (this.lastAdaptive) this.lastAdaptive.hits = hits.map((hit) => hit.record.name);
     return hits;
   }
 
@@ -508,6 +628,13 @@ export class Mnemo {
 
   async read(name: string, depth: 'l1' | 'l2' = 'l1'): Promise<ReadResult | null> {
     const record = this.find(name);
+    // Reading one of the pointers a recall just returned is the honest, cheap
+    // reward signal: the recall was good enough that a body was actually opened.
+    const safe = matchSafeName(name);
+    if (this.lastAdaptive && safe) {
+      const hit = this.lastAdaptive.hits.includes(safe);
+      this.feedback(hit ? 0.85 : 0.25);
+    }
     if (!record) return null;
 
     const body = depth === 'l2' ? record.body : outlineOf(record.body);

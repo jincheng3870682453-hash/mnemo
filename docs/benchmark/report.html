@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>mnemo benchmark report</title>
+<style>
+  :root{--bg:#0b1020;--panel:#121a2b;--line:#22304a;--text:#e6edf3;--muted:#8b949e;--green:#34d399;--red:#f87171;--cyan:#22d3ee;--gold:#fbbf24}
+  *{box-sizing:border-box}
+  body{margin:0;color:var(--text);font:14px/1.6 ui-sans-serif,system-ui,"Segoe UI",sans-serif;
+    background:
+      radial-gradient(1100px 520px at 12% -10%, rgba(34,211,238,.13), transparent 60%),
+      radial-gradient(900px 480px at 108% 4%, rgba(167,139,250,.15), transparent 55%),
+      linear-gradient(165deg,#0e1525 0%,#131c31 48%,#0c1220 100%);
+    background-attachment:fixed;}
+  main{max-width:1040px;margin:0 auto;padding:48px 20px 64px}
+  h1{font-size:28px;margin:0 0 6px}
+  .sub{color:var(--muted);margin:0 0 28px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:28px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px}
+  .card-label{color:var(--muted);font-size:12px;letter-spacing:.04em;text-transform:uppercase}
+  .card-value{font:700 30px/1.2 ui-monospace,monospace;margin:8px 0 4px}
+  .card-note{color:var(--muted);font-size:12px}
+  figure{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:10px;margin:0 0 18px}
+  figure img{width:100%;height:auto;display:block;border-radius:10px}
+  figcaption{color:var(--muted);font-size:12px;padding:10px 8px 4px}
+  table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  th,td{padding:10px 14px;text-align:left;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+  code{background:#0b1017;border:1px solid var(--line);border-radius:6px;padding:2px 6px;font-family:ui-monospace,monospace;font-size:12px}
+  .foot{color:var(--muted);font-size:12px;margin-top:28px}
+</style></head>
+<body><main>
+  <h1>mnemo · dialogue benchmark</h1>
+  <p class="sub">20 dialogues · 160 turns · 44 facts · 40 labelled queries · generated 2026-11-13T14:20:28Z</p>
+
+  <div class="grid">
+    <div class="card"><div class="card-label">recall@1</div><div class="card-value" style="color:#34d399">85.0%</div><div class="card-note">naive 22.5%</div></div>
+    <div class="card"><div class="card-label">recall@3</div><div class="card-value" style="color:#34d399">97.5%</div><div class="card-note">naive 55.0%</div></div>
+    <div class="card"><div class="card-label">tokens / turn</div><div class="card-value" style="color:#fbbf24">156.2</div><div class="card-note">naive 139.3 · 8-turn corpus</div></div>
+    <div class="card"><div class="card-label">probe saving</div><div class="card-value" style="color:#22d3ee">26.5%</div><div class="card-note">1902 vs 2588 tok</div></div>
+  </div>
+
+  <figure><img src="tokens.svg" alt="context tokens"/><figcaption>Short dialogues are where mnemo's fixed boot cost is largest; the projection below shows where it crosses.</figcaption></figure>
+  <figure><img src="accuracy.svg" alt="recall"/><figcaption>Same questions, same corpus. The naive baseline gets the whole transcript and still misses.</figcaption></figure>
+  <figure><img src="probe.svg" alt="probe"/><figcaption>Feeling-of-knowing is a single line that costs less than deciding to search.</figcaption></figure>
+  <figure><img src="cost-curve.svg" alt="cost curve"/><figcaption>Analytical projection, not extra measurements: naive is linear in turns, mnemo is flat.</figcaption></figure>
+
+  <h2>按领域（recall@1）</h2>
+  <table><thead><tr><th>domain</th><th>dialogues</th><th>queries</th><th>naive</th><th>mnemo</th></tr></thead><tbody>
+  <tr><td>coding</td><td>6</td><td>12</td><td>25.0%</td><td>100.0%</td></tr>
+<tr><td>health</td><td>1</td><td>2</td><td>50.0%</td><td>50.0%</td></tr>
+<tr><td>life</td><td>4</td><td>8</td><td>25.0%</td><td>87.5%</td></tr>
+<tr><td>study</td><td>3</td><td>6</td><td>16.7%</td><td>66.7%</td></tr>
+<tr><td>travel</td><td>2</td><td>4</td><td>50.0%</td><td>100.0%</td></tr>
+<tr><td>work</td><td>4</td><td>8</td><td>0.0%</td><td>75.0%</td></tr>
+  </tbody></table>
+
+  <p class="foot">Reproduce: <code>npm run bench:dialogue</code> then <code>npm run bench:render</code>. Corpus: <code>bench/data/dialogues.jsonl</code> (curated, labelled by hand). The naive baseline resends the full transcript plus the same system prompt every turn. Numbers are estimates from mnemo's own tokeniser, not a provider's tokenizer.</p>
+</main></body></html>

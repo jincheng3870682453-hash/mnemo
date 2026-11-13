@@ -3,6 +3,9 @@ dist/
 *.tsbuildinfo
 .DS_Store
 .mnemo/
+bench/out/
+bench/data/dialogues.oasst.jsonl
+.npm-cache/
 temp/
 coverage/
 *.log

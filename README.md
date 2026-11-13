@@ -40,7 +40,7 @@
 | 同一件事重复写入 | 记录不断堆积 | 合并/推翻，**记录数 −75%** |
 | 旧认知 | 和新的一起混着 | 标失效，`asOf` 仍可回溯 |
 
-> 三个数字都由 `npm run bench` 复现（合成语料，见[基准](#-基准)）。
+> 三个数字都由 `npm run bench` 复现（合成语料）；真实对话基准见[基准](#-基准)。
 
 ---
 
@@ -158,6 +158,27 @@ App **只画 JSON，不执行插件代码**。三个界面，都只放指针：
 
 ## 📊 基准
 
+### 真实对话（主基准）
+
+![上下文成本](docs/benchmark/tokens.svg)
+![检索准确率](docs/benchmark/accuracy.svg)
+
+| metric | naive（每轮重发全文） | mnemo |
+|:--|--:|--:|
+| recall@1 | 22.5% | **85.0%** |
+| recall@3 | 55.0% | **97.5%** |
+| context tokens（整段会话） | 22.3k | 25.0k |
+| tokens / turn | 139.3 | 156.2 |
+| 探针 vs 全量检索 | — | **26.5% 更省** |
+
+语料是 20 段对话、160 轮、40 个标注问题，在 `bench/data/dialogues.jsonl`，每个事实标注了它出现的轮次，每个问题标注了正确答案。8 轮左右的短会话里，mnemo 的固定启动开销（system + 索引）比增量 transcript 更贵；随会话变长两者交叉：
+
+![成本曲线](docs/benchmark/cost-curve.svg)
+
+交叉点约 11 轮。超过它，重发全文开始比放指针贵，而准确率差距已经很大。完整交互报告：[docs/benchmark/report.html](docs/benchmark/report.html)，交互演示：[docs/demo/index.html](docs/demo/index.html)，复现：`npm run bench:dialogue && npm run bench:render`。方法论与局限见 [BENCHMARK.md](BENCHMARK.md)。
+
+### 固化与探针（回归检查）
+
 ```bash
 npm run bench
 ```
@@ -175,7 +196,15 @@ feeling-of-knowing probe over 20 queries
   probe 1181 tok · recall 2087 tok · 43% cheaper
 ```
 
-> 语料是 20 个主题 × 4 条陈述，**和实现一起写的**。当回归检查看，别当证据。
+> 这份语料是 20 个主题 × 4 条陈述，**和实现一起写的**。当回归检查看，别当证据。
+
+### 自适应调参
+
+```bash
+npm run bench:adaptive
+```
+
+在同样的对话语料上对比固定参数与 LinUCB 上下文盗匪。基准里自适应拿到的是 oracle 反馈（返回的指针里是否真的有标准答案），所以是上限而非承诺；实测两者 recall 持平，差异体现在参数选择的分布上。见 [BENCHMARK.md](BENCHMARK.md#自适应调参)。
 
 ---
 
@@ -186,6 +215,9 @@ feeling-of-knowing probe over 20 queries
 | `decay.exponent` | `0.7` | 幂律指数，未标定，请 A/B |
 | `decay.stabilityGrowth` | `1.3` | 每次取用后稳定性倍数 |
 | `retrieve.weights` | `0.5/1.5/2/2` | 四信号权重，起点不是结论 |
+| `adaptive.enabled` | `false` | LinUCB 在线调参，默认关，见下 |
+| `adaptive.alpha` | `1.0` | 探索强度，0 = 纯贪心 |
+| `adaptive.warmup` | `8` | 冷启动期强制用默认参数 |
 | `competition.enabled` | `true` | 提取诱发遗忘 |
 | `consolidation.enabled` | `true` | 合并/推翻，收益未证实，可关 |
 | `vector.mode` | `auto` | `off` / `auto`(≥5000 条) / `on` |
@@ -200,8 +232,8 @@ feeling-of-knowing probe over 20 queries
 | 固化收益 | 质量分与下游准确率**不相关**（ρ = −0.24）。可关，也可回滚 |
 | 探针校准 | 检索前置信在 LLM 上**弱校准**，只给三档粗判 |
 | 自检 hitRate | 自检索比真实查询容易，是相对健康信号，不是召回率 |
-| 衰减参数 | 全部手调，没有一个是标定出来的 |
-| 基准 | 合成语料，跨系统比较无意义 |
+| 衰减参数 | 默认值仍是手调；`adaptive.enabled` 提供在线选择，但只在 6 个预设里选，不是连续标定 |
+| 基准 | 人工标注的真实感对话（20 段 / 160 轮），非公开评审基准；naive 基线的 transcript 未截断 |
 
 ---
 
@@ -210,8 +242,11 @@ feeling-of-knowing probe over 20 queries
 ```bash
 npm ci
 npm run build          # tsc → dist/
-npm test               # 148 个测试
+npm test               # 163 个测试
 npm run bench          # 固化 / 探针基准
+npm run bench:dialogue # 真实对话基准 → bench/out/report.json
+npm run bench:adaptive # 固定参数 vs 自适应调参
+npm run bench:render   # 生成 docs/benchmark/*.svg 与 report.html
 npm run build:plugin   # 同步 plugin/ 与 dsh-go/ 产物
 npm run check:dsh-go   # DSH Go 清单 lint + handler 冒烟
 ```

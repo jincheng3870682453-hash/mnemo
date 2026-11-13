@@ -242,6 +242,34 @@ export interface CompetitionConfig {
   maxPenalty: number;
 }
 
+/** Recursive partial: lets a caller override one nested knob without restating it. */
+export type DeepPartial<T> = {
+  [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K];
+};
+
+/**
+ * Online parameter tuning.
+ *
+ * The decay and retrieval defaults are hand-tuned starting points, and the
+ * project's own documentation says so. This turns the *choice among* those
+ * starting points into a contextual bandit: every recall measures a small
+ * feature vector, one arm is tried, and the reward the caller reports moves the
+ * choice. It is deliberately a bandit and not a model call — no LLM, no network,
+ * no training set, and it keeps working when the workload shifts.
+ *
+ * Off by default: a hidden adaptive layer deciding rankings is exactly the kind
+ * of thing that should be opt-in and inspectable (`mnemo.adaptiveStats()`).
+ */
+export interface AdaptiveConfig {
+  enabled: boolean;
+  /** UCB exploration strength. Higher explores more, 0 is greedy. */
+  alpha: number;
+  /** Recalls observed before the bandit may leave the default arm. */
+  warmup: number;
+  /** Persisted tuner state, relative to the store root. */
+  stateFile: string;
+}
+
 export interface MnemoConfig {
   decay: DecayConfig;
   retrieve: RetrieveConfig;
@@ -249,6 +277,8 @@ export interface MnemoConfig {
   vector: VectorConfig;
   consolidation: ConsolidationConfig;
   competition: CompetitionConfig;
+  /** Optional online tuning of decay/retrieval params. Off by default. */
+  adaptive: AdaptiveConfig;
   /** Soft cap on `abstract`. Longer abstracts are rejected at write time. */
   abstractMaxChars: number;
   /** Days after which a verbatim/episodic body is condensed and archived. */
@@ -293,12 +323,18 @@ export const DEFAULT_CONFIG: MnemoConfig = {
     fadeDays: 5,
     maxPenalty: 0.4,
   },
+  adaptive: {
+    enabled: false,
+    alpha: 1.0,
+    warmup: 8,
+    stateFile: 'adaptive.json',
+  },
   abstractMaxChars: 60,
   verbatimTtlDays: 90,
   offloadThresholdTokens: 400,
 };
 
-export function mergeConfig(partial?: Partial<MnemoConfig>): MnemoConfig {
+export function mergeConfig(partial?: DeepPartial<MnemoConfig>): MnemoConfig {
   if (!partial) return structuredClone(DEFAULT_CONFIG);
   return {
     decay: { ...DEFAULT_CONFIG.decay, ...(partial.decay ?? {}) },
@@ -310,6 +346,7 @@ export function mergeConfig(partial?: Partial<MnemoConfig>): MnemoConfig {
     vector: { ...DEFAULT_CONFIG.vector, ...(partial.vector ?? {}) },
     consolidation: { ...DEFAULT_CONFIG.consolidation, ...(partial.consolidation ?? {}) },
     competition: { ...DEFAULT_CONFIG.competition, ...(partial.competition ?? {}) },
+    adaptive: { ...DEFAULT_CONFIG.adaptive, ...(partial.adaptive ?? {}) },
     abstractMaxChars: partial.abstractMaxChars ?? DEFAULT_CONFIG.abstractMaxChars,
     verbatimTtlDays: partial.verbatimTtlDays ?? DEFAULT_CONFIG.verbatimTtlDays,
     offloadThresholdTokens:
