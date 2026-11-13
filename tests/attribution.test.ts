@@ -93,3 +93,11 @@ test('contradicts still fires when the predicate itself contains a negation', ()
   const b = { subject: 'user:a', abstract: '构建工具：金呈不喜欢用 tsc 直接编译不打 bundle' };
   assert.equal(contradicts(a, b), true);
 });
+
+test('adding a negation in a subordinate clause is not a change of mind', () => {
+  // Regression: "使用 tsc" -> "使用 tsc 且不打包" gained a negation and used to be
+  // read as a reversal, so a refinement silently invalidated the original.
+  const a = { subject: 'user:a', abstract: '构建脚本使用 tsc' };
+  const b = { subject: 'user:a', abstract: '构建脚本使用 tsc 且不打包' };
+  assert.equal(contradicts(a, b), false);
+});

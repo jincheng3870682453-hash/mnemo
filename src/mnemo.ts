@@ -22,6 +22,7 @@ import type {
 } from './types.js';
 import { mergeConfig } from './types.js';
 import { FileStore, matchSafeName } from './store/file-store.js';
+import { deserializeRecord } from './store/frontmatter.js';
 import { BM25Index } from './index/bm25.js';
 import { bindAttribution, attributionLabel, decisionEligible } from './memory/attribution.js';
 import { encodeGist, heuristicGist } from './memory/gist.js';
@@ -93,6 +94,25 @@ export interface ConsolidateReport {
   archived: string[];
   scanned: number;
 }
+
+/** Result of an empirical confidence calibration pass. */
+export interface SelfTestReport {
+  samples: number;
+  hits: number;
+  hitRate: number;
+  /** Records whose confidence moved enough to be written back. */
+  updated: number;
+  /** Records that failed to find themselves, lowest resulting confidence first. */
+  weakest: Array<{ name: string; before: number; after: number }>;
+  /** Read this before quoting `hitRate` anywhere. */
+  caveat: string;
+}
+
+export const SELF_TEST_CAVEAT =
+  'Self-retrieval uses each record\'s own abstract as the query, which is easier ' +
+  'than a real user query: there is no paraphrase and no vocabulary gap. Treat ' +
+  'hitRate as a relative health signal and a detector for competition or index ' +
+  'damage, not as an estimate of how often the agent will find what it needs.';
 
 export interface Metrics {
   total: number;
@@ -308,6 +328,9 @@ export class Mnemo {
         notes.push(`duplicate of "${match.record.name}": kept the original`);
       } else if (plan.relation === 'refines') {
         relation = 'refines';
+        // Merging destroys the old body. Keep a version first: consolidation is
+        // the least-proven mechanism here, so it must be reversible.
+        await this.store.snapshot(match.record, now);
         mergeIntoRecord(match.record, record, now);
         await this.store.save(match.record);
         this.reindexOne(match.record);
@@ -315,6 +338,7 @@ export class Mnemo {
         notes.push(`merged into "${match.record.name}": ${plan.reason}`);
       } else if (plan.relation === 'supersedes') {
         relation = 'supersedes';
+        await this.store.snapshot(match.record, now);
         supersedeRecord(match.record, now);
         await this.store.save(match.record);
         this.reindexOne(match.record);
@@ -630,6 +654,110 @@ export class Mnemo {
 
   async readOffload(sessionId: string, ref: string, options: OffloadReadOptions = {}) {
     return readOffloadFile(this.store, sessionId, ref, options);
+  }
+
+  // --------------------------------------------------------------- history --
+
+  /**
+   * Versions preserved for a record, newest first.
+   *
+   * Every merge and every supersede writes one before overwriting anything, so a
+   * consolidation that turned out to be wrong can be undone instead of merely
+   * being switched off next time.
+   */
+  async history(name: string): Promise<string[]> {
+    return this.store.historyVersions(name);
+  }
+
+  /** Restore a record from a preserved version. Defaults to the newest one. */
+  async restore(name: string, version?: string): Promise<boolean> {
+    const versions = await this.store.historyVersions(name);
+    const chosen = version ?? versions[0];
+    if (!chosen) return false;
+    const raw = await this.store.readVersion(name, chosen);
+    if (!raw) return false;
+    const record = deserializeRecord(raw);
+    await this.store.save(record);
+    this.reindexOne(record);
+    return true;
+  }
+
+  // ------------------------------------------------------------- self-test --
+
+  /**
+   * Calibrate confidence empirically: ask each record to find itself.
+   *
+   * Borrowed from decoy verification — instead of trusting a `confidence` value
+   * that was set once at write time and has never been checked, run a probe whose
+   * answer is known. If a record cannot be retrieved by its own abstract, either
+   * something more relevant now outranks it or the index is unhealthy.
+   *
+   * Read the caveat in the report before treating the number as a user metric:
+   * self-retrieval is easier than a real query, so this is a *relative* health
+   * signal and a corruption detector, not an estimate of answer quality.
+   *
+   * Deterministic sampling: records are sorted and taken at a fixed stride, so the
+   * same store produces the same sample.
+   */
+  async selfTest(options: { samples?: number; learningRate?: number } = {}): Promise<SelfTestReport> {
+    const sampleSize = Math.max(1, options.samples ?? 20);
+    const learningRate = Math.min(1, Math.max(0.01, options.learningRate ?? 0.3));
+
+    const live = [...this.records.values()]
+      .filter((r) => !r.invalidAt && r.type !== 'persona')
+      .sort((a, b) => a.name.localeCompare(b.name));
+    if (live.length === 0) {
+      return {
+        samples: 0,
+        hits: 0,
+        hitRate: 0,
+        updated: 0,
+        weakest: [],
+        caveat: SELF_TEST_CAVEAT,
+      };
+    }
+
+    const stride = Math.max(1, Math.floor(live.length / sampleSize));
+    const sample = live.filter((_, index) => index % stride === 0).slice(0, sampleSize);
+
+    const engine = {
+      records: live,
+      index: this.index,
+      config: this.config,
+      pathOf: (name: string): string => {
+        const record = this.find(name);
+        return record ? this.store.relativePathFor(record).split(path.sep).join('/') : '';
+      },
+    };
+
+    let hits = 0;
+    let updated = 0;
+    const weakest: SelfTestReport['weakest'] = [];
+
+    for (const record of sample) {
+      const top = retrieve(engine, { query: record.abstract, limit: 1 });
+      const hit = top.length > 0 && top[0].record.name === record.name;
+      if (hit) hits++;
+
+      const before = record.confidence;
+      record.confidence = Math.min(1, Math.max(0.05, before * (1 - learningRate) + (hit ? 1 : 0) * learningRate));
+      if (Math.abs(record.confidence - before) > 1e-6) {
+        await this.store.update(record);
+        updated++;
+      }
+      if (!hit) weakest.push({ name: record.name, before, after: record.confidence });
+    }
+
+    weakest.sort((a, b) => a.after - b.after);
+
+    return {
+      samples: sample.length,
+      hits,
+      hitRate: sample.length > 0 ? hits / sample.length : 0,
+      updated,
+      weakest,
+      caveat: SELF_TEST_CAVEAT,
+    };
   }
 
   // -------------------------------------------------------------- metrics --

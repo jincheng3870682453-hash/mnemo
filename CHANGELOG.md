@@ -4,6 +4,46 @@ All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] — 2026-11-13
+
+Two mechanisms borrowed from my own other projects, both of which close a hole
+the 0.3.0 design had left open.
+
+### Added
+
+**Reversible consolidation** (from `token-sage`'s snapshot-and-rollback pattern)
+- Every `refines` and every `supersedes` writes a snapshot to
+  `history/<name>/<timestamp>.md` before the record is rewritten.
+- `mem.history(name)` lists versions, `mem.restore(name, version?)` puts one back
+  and clears `invalidAt`.
+- `history/` is excluded from the record scan, so preserved versions never show up
+  as memories.
+- Rationale: a config flag protects the *next* write, not the merge that already
+  destroyed a body. Consolidation is the least-proven mechanism here (ρ = −0.24),
+  so it should be reversible, not merely switchable.
+
+**Empirical confidence** (from `shepherd-microdemo`'s credit × decoy verification)
+- `mem.selfTest()` samples records deterministically, uses each record's own
+  abstract as a query, and moves `confidence` toward whether it actually came back
+  first (EMA).
+- The caveat ships in the return value: self-retrieval is easier than a real
+  query, so `hitRate` is a health signal and corruption detector, not an estimate
+  of user-level recall.
+
+### Fixed
+
+- `contradicts()` treated any added negation as a reversal, so refining a claim
+  with a subordinate clause ("…用 tsc" → "…用 tsc 且不打包") silently invalidated
+  the original instead of merging. It now requires the stripped claims to be ≥0.85
+  similar, i.e. the only substantive difference must be the polarity itself.
+
+### Changed
+
+- `IDEAS.md` gained a section of mechanisms transplanted from my other repos
+  (decoy verification, snapshot rollback, half-duplex optimism, SimHash dedupe and
+  topic-shift detection, HMAC audit chain, would-do logging, offline parameter
+  fitting), and the roadmap was reordered around them.
+
 ## [0.3.0] — 2026-11-13
 
 Three mechanisms that are both cheaper and more human, plus the contribution
@@ -184,3 +224,4 @@ First release. Zero runtime dependencies; Node 20+.
 [0.1.0]: https://github.com/jincheng3870682453-hash/mnemo/releases/tag/v0.1.0
 [0.2.0]: https://github.com/jincheng3870682453-hash/mnemo/releases/tag/v0.2.0
 [0.3.0]: https://github.com/jincheng3870682453-hash/mnemo/releases/tag/v0.3.0
+[0.4.0]: https://github.com/jincheng3870682453-hash/mnemo/releases/tag/v0.4.0

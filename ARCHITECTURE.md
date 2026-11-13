@@ -192,6 +192,24 @@ because CJK unigrams match almost anything and inflate confidence.
 (NeurIPS 2026), and hallucinated answers retain elevated confidence. So the probe
 is deliberately coarse: three buckets, never a probability, never a body.
 
+### 4.7 Empirical confidence: asking each memory to find itself
+
+`confidence` used to be a number set once at write time and never checked. It is
+now calibrated: `mem.selfTest()` takes a deterministic sample of records, uses each
+one's own abstract as a query, and moves `confidence` toward whether that record
+actually came back first.
+
+It is decoy verification applied to memory: run a probe whose answer is known, and
+let the outcome — not the writer's optimism — set the number. Records that fail
+drop down the ranking instead of quietly claiming authority.
+
+**The caveat is part of the return value**, not a footnote:
+
+> Self-retrieval uses each record's own abstract as the query, which is easier
+> than a real user query: there is no paraphrase and no vocabulary gap. Treat
+> `hitRate` as a relative health signal and a detector for competition or index
+> damage, not as an estimate of how often the agent will find what it needs.
+
 ---
 
 ## 4.6 Retrieval-induced forgetting: rivals go quiet
@@ -256,6 +274,24 @@ consolidation *quality scores* do not predict downstream answer accuracy
 found a nightly consolidation cycle made results slightly worse (71.7% → 69.8%).
 So `consolidate()` here does the conservative thing only — archive decayed
 records — and nothing in the library runs it automatically.
+
+### 5.1 Consolidation is reversible, not just switchable
+
+A config flag protects you from the *next* write; it does nothing about the merge
+that already destroyed a body. So every `refines` and every `supersedes` writes a
+snapshot to `history/<name>/<timestamp>.md` before touching the record:
+
+```ts
+await mem.history('build');   // ['2026-11-13T13-35-18-743Z', ...]
+await mem.restore('build');   // newest version, back in place
+```
+
+`history/` is deliberately excluded from the record scan, so preserved versions
+never appear as memories. `restore()` also clears `invalidAt`, which is what makes
+undoing a supersede meaningful rather than cosmetic.
+
+This is the honest answer to "we are not sure this mechanism helps": make the
+mistake cheap to revert.
 
 ---
 

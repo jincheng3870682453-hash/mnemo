@@ -102,8 +102,13 @@ function stripNegation(text) {
  * one innocuously ("compiles without bundling" → 不打 bundle), which makes both
  * sides look negative and hides a real change of mind. So the comparison is:
  * strip every negation marker from both sides, require the *stripped* claims to
- * still be similar, and require the negation counts to differ. That detects
- * "likes X" vs "doesn't like X" even when X itself contains a negation.
+ * still be almost the same sentence, and require the negation counts to differ.
+ *
+ * The "almost the same sentence" part matters for the opposite failure: adding a
+ * negation somewhere in a subordinate clause ("…用 tsc" → "…用 tsc 且不打包") is a
+ * refinement, not a reversal. Requiring 0.85 on the stripped text means the only
+ * substantive difference is the polarity itself, which is what changing your mind
+ * looks like.
  */
 export function contradicts(a, b) {
     if (a.subject && b.subject && a.subject !== b.subject)
@@ -112,6 +117,8 @@ export function contradicts(a, b) {
         return false;
     const sa = tokenize(stripNegation(a.abstract));
     const sb = tokenize(stripNegation(b.abstract));
-    return tokenOverlap(sa, sb) >= 0.5;
+    return tokenOverlap(sa, sb) >= CONTRADICTION_SIMILARITY;
 }
+/** How alike the stripped claims must be before a polarity flip counts as one. */
+const CONTRADICTION_SIMILARITY = 0.85;
 //# sourceMappingURL=attribution.js.map

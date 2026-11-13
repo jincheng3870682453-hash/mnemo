@@ -23,8 +23,20 @@ import type { MemoryRecord, MemoryType } from '../types.js';
 import { shortHash } from '../util/id.js';
 import { deserializeRecord, serializeRecord } from './frontmatter.js';
 
-const DIRS = ['facts', 'episodic', 'persona', 'intentions', 'archive', 'session', 'index'] as const;
+const DIRS = [
+  'facts',
+  'episodic',
+  'persona',
+  'intentions',
+  'archive',
+  'history',
+  'session',
+  'index',
+] as const;
 export type StoreDir = (typeof DIRS)[number];
+
+/** Directories whose `.md` files are records. `history/` is deliberately excluded. */
+const RECORD_DIRS = ['facts', 'episodic', 'persona', 'intentions', 'archive'] as const;
 
 const SAFE_SEGMENT_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
@@ -143,7 +155,7 @@ export class FileStore {
   /** Force a rescan of the tree. Cheap (< 10ms for thousands of files). */
   async rebuildLocationMap(): Promise<void> {
     this.location.clear();
-    for (const dir of ['facts', 'episodic', 'persona', 'intentions', 'archive'] as const) {
+    for (const dir of RECORD_DIRS) {
       const abs = path.resolve(this.root, dir);
       if (!abs.startsWith(this.root + path.sep)) continue;
       await this.walk(abs, dir);
@@ -277,8 +289,67 @@ export class FileStore {
     return path.relative(this.root, toAbs);
   }
 
-  /** Hard delete. Prefer `archive()`: forgetting should degrade, not vanish. */
-  async remove(name: string): Promise<boolean> {
+  // ---------------------------------------------------------------- history --
+
+  /**
+   * Preserve the current state of a record before it is rewritten.
+   *
+   * Merging and superseding both destroy information: the old body is replaced.
+   * Consolidation is the least-proven mechanism in this library, so it should be
+   * *reversible*, not merely switchable. Every destructive rewrite takes one of
+   * these first, which is what makes `restore()` honest.
+   */
+  async snapshot(record: MemoryRecord, at: Date): Promise<string> {
+    const safeName = matchSafeName(record.name);
+    if (!safeName) throw new PathEscapeError(`record name is not a valid slug: ${record.name}`);
+    const version = at.toISOString().replace(/[:.]/g, '-');
+    const dir = path.resolve(this.root, 'history', safeName);
+    if (!dir.startsWith(this.root + path.sep)) {
+      throw new PathEscapeError('history dir escapes store root');
+    }
+    await mkdir(dir, { recursive: true });
+    const abs = path.resolve(dir, `${version}.md`);
+    if (!abs.startsWith(dir + path.sep)) {
+      throw new PathEscapeError('history file escapes history dir');
+    }
+    await writeFile(abs, serializeRecord(record), 'utf8');
+    return path.relative(this.root, abs);
+  }
+
+  /** Versions kept for a record, newest first. */
+  async historyVersions(name: string): Promise<string[]> {
+    const safeName = matchSafeName(name);
+    if (!safeName) return [];
+    const dir = path.resolve(this.root, 'history', safeName);
+    if (!dir.startsWith(this.root + path.sep)) return [];
+    try {
+      const entries = await readdir(dir);
+      return entries
+        .filter((f) => f.endsWith('.md'))
+        .map((f) => f.slice(0, -3))
+        .sort()
+        .reverse();
+    } catch {
+      return [];
+    }
+  }
+
+  /** Read one preserved version, by the id returned from `historyVersions`. */
+  async readVersion(name: string, version: string): Promise<string | null> {
+    const safeName = matchSafeName(name);
+    if (!safeName) return null;
+    const dir = path.resolve(this.root, 'history', safeName);
+    if (!dir.startsWith(this.root + path.sep)) return null;
+    const abs = path.resolve(dir, `${safeSegment(version)}.md`);
+    if (!abs.startsWith(dir + path.sep)) return null;
+    try {
+      return await readFile(abs, 'utf8');
+    } catch {
+      return null;
+    }
+  }
+
+  /** Hard delete. Prefer `archive()`: forgetting should degrade, not vanish. */  async remove(name: string): Promise<boolean> {
     await this.ensureLoaded();
     const abs = this.location.get(name);
     if (!abs) return false;
