@@ -17,6 +17,8 @@ export type {
   ReconstructResult,
   ConsolidateReport,
   Metrics,
+  CheckpointInput,
+  EpisodeSummary,
 } from './mnemo.js';
 
 export {

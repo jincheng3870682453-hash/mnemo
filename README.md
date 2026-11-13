@@ -2,11 +2,11 @@
 
 <img alt="STATUS" src="https://img.shields.io/badge/STATUS-BETA-ff9f1c?style=for-the-badge&labelColor=1a1a2e">
 <img alt="RUNTIME DEPS" src="https://img.shields.io/badge/RUNTIME%20DEPS-ZERO-2ecc71?style=for-the-badge&labelColor=1a1a2e">
-<img alt="TESTS" src="https://img.shields.io/badge/TESTS-148%20PASSING-2ecc71?style=for-the-badge&labelColor=1a1a2e">
+<img alt="TESTS" src="https://img.shields.io/badge/TESTS-156%20PASSING-2ecc71?style=for-the-badge&labelColor=1a1a2e">
 <img alt="LICENSE" src="https://img.shields.io/badge/LICENSE-MIT-4b67b4?style=for-the-badge&labelColor=1a1a2e">
 
 <img alt="NODE" src="https://img.shields.io/badge/NODE-%E2%89%A520-339933?style=for-the-badge&logo=nodedotjs&logoColor=white&labelColor=1a1a2e">
-<img alt="VERSION" src="https://img.shields.io/badge/VERSION-0.5.0-22d3ee?style=for-the-badge&labelColor=1a1a2e">
+<img alt="VERSION" src="https://img.shields.io/badge/VERSION-0.6.0-22d3ee?style=for-the-badge&labelColor=1a1a2e">
 <a href="https://github.com/jincheng3870682453-hash/mnemo/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/jincheng3870682453-hash/mnemo/actions/workflows/ci.yml/badge.svg"></a>
 
 <pre>
@@ -74,6 +74,10 @@ await mem.read('pref-direct', 'l2');
 
 // 拼：可缓存前缀 + 每轮变化的尾段
 const ctx = await mem.bootContext({ userMessage: '帮我看看这个设计' });
+
+// 情节：把一段对话压成一条，标题就是概括
+await mem.checkpoint({ summary: '讨论记忆分区与 JSON 方案', sessionId: 's-1', facts: ['pref-direct'] });
+mem.episodeLines();   // 一行一条，列出来就是索引
 ```
 
 ---
@@ -136,6 +140,7 @@ App **只画 JSON，不执行插件代码**。三个界面，都只放指针：
 | 元记忆探针 | "我好像知道" | 一行替代一轮检索 |
 | 提取诱发遗忘 | 想起这个，那个一时想不起 | 近似重复项自己让路 |
 | 前瞻记忆 | 惦记还没做的事 | 常驻一行 |
+| 情节记忆 | 说得出"上次那次" | 列标题即索引，不用读正文 |
 | 归属绑定 | 分得清谁说的 | 防二手偏好污染决策 |
 | 合并前快照 | 改了主意还记得原来怎么想 | 固化错了能回滚 |
 | 诱饵自检 | "我确定我记得"要经得起检验 | 本地计算，零模型调用 |

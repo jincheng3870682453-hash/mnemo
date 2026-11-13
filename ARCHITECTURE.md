@@ -328,6 +328,52 @@ then match on intended use rather than on wording.
 
 ---
 
+## 6.5 Episodes: what facts cannot express
+
+Facts record what is true. Episodes record that something *happened*: who was
+there, what was decided, how it ended. Without them "上次那次" cannot resolve to
+anything, and a fact store has no way to say "we talked about this in November".
+
+```ts
+await mem.checkpoint({
+  summary: '讨论记忆分区与 JSON 方案',
+  sessionId: 's-1',
+  facts: ['pref-direct'],        // what it was about
+});
+mem.episodeLines();
+// - 讨论记忆分区与 JSON 方案 · 2026-11-13 · episodic/episode/json-619707.md
+```
+
+**The listing is the index.** The summary is the L0 handle, the file name is
+derived from it, and the one-line listing carries title, date and path — so
+answering "when did we talk about this" needs no body reads and no query. That is
+the useful half of the "one JSON file per context window, file name is the
+summary" pattern.
+
+**The half not adopted, and why.** Storing memory as JSON with the summary *as*
+the file name fails on four concrete points:
+
+| Issue | Detail |
+|---|---|
+| CJK file names | 255-byte limits, no `/`, mangled by zip and git across platforms. This repo already shipped a bug where stripping CJK collapsed 20 topics into one file name |
+| JSON vs Markdown | Bodies become `\n` soup; no readable diffs; no hand editing |
+| Listing only, no query | A name list cannot answer a fuzzy query; BM25 can |
+| Name uniqueness | Needs a hash suffix, at which point the name stops reading like a summary |
+
+So the file name stays a slug and the summary stays the first line. The property
+that mattered — cheap listing — is preserved by `episodes()`.
+
+**Episodes never consolidate with each other.** Two conversations about the same
+topic are two events, not a duplicate claim, so `episode` is excluded from the
+consolidation candidate set.
+
+**What is still missing.** Event *segmentation*: deciding where one episode ends
+and the next begins is currently the caller's job. Cognitive science ties
+boundaries to prediction error, which has no reliable LLM analogue, so this stays
+manual rather than guessed.
+
+---
+
 ## 7. Context assembly: the cache boundary is the API
 
 ```ts

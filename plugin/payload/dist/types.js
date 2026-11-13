@@ -12,6 +12,7 @@ export const MEMORY_TYPES = [
     'skill',
     'hearsay',
     'event',
+    'episode',
     'persona',
     'intention',
 ];

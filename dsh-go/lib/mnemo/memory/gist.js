@@ -19,6 +19,7 @@ const EMOTION_SALIENCE_BOOST = 2;
 const DEFAULT_FUTURE = {
     preference: ['用户再次表达偏好时', '生成内容需要贴合个人风格时'],
     event: ['复盘这段时间发生了什么时'],
+    episode: ['用户说"上次那次"时', '需要回忆起某段对话的来龙去脉时'],
     skill: ['遇到同类任务时'],
     fact: ['用户问起相关背景时'],
     hearsay: ['需要交叉验证某个说法时'],
@@ -105,7 +106,7 @@ export async function encodeGist(input) {
     const future = asStringArray(raw.future);
     const emotion = asStringArray(raw.emotion);
     const typeRaw = asString(raw.type, fallback.type);
-    const type = ['fact', 'preference', 'event', 'skill', 'hearsay', 'persona', 'intention'].includes(typeRaw)
+    const type = ['fact', 'preference', 'event', 'episode', 'skill', 'hearsay', 'persona', 'intention'].includes(typeRaw)
         ? typeRaw
         : fallback.type;
     return {

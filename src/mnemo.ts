@@ -95,8 +95,29 @@ export interface ConsolidateReport {
   scanned: number;
 }
 
-/** Result of an empirical confidence calibration pass. */
-export interface SelfTestReport {
+export interface CheckpointInput {
+  /** One line describing what this stretch of conversation was about. */
+  summary: string;
+  /** Optional longer account. Defaults to the summary. */
+  body?: string;
+  /** Session this episode came from. Stored as provenance, never as an id in the text. */
+  sessionId?: string;
+  /** Names of records this episode is about. */
+  facts?: string[];
+  salience?: number;
+  at?: Date;
+}
+
+/** An episode as it appears in a listing: title, date, linked facts, path. */
+export interface EpisodeSummary {
+  name: string;
+  title: string;
+  at: string;
+  facts: string[];
+  path: string;
+}
+
+/** Result of an empirical confidence calibration pass. */export interface SelfTestReport {
   samples: number;
   hits: number;
   hitRate: number;
@@ -309,7 +330,13 @@ export class Mnemo {
     // changed mind leaves two live beliefs. `npm run bench` quantifies the cost.
     const candidates = this.config.consolidation.enabled
       ? [...this.records.values()].filter(
-          (r) => !r.invalidAt && r.name !== record.name && r.type === record.type,
+          (r) =>
+            !r.invalidAt &&
+            r.name !== record.name &&
+            r.type === record.type &&
+            // Episodes are unique by nature: two conversations about the same
+            // topic are two events, not a duplicate claim.
+            r.type !== 'episode',
         )
       : [];
     const match = bestMatch(record, candidates);
@@ -591,8 +618,67 @@ export class Mnemo {
     return true;
   }
 
-  // --------------------------------------------------------------- intend --
+  // -------------------------------------------------------------- episode --
 
+  /**
+   * Collapse a stretch of conversation into one episode.
+   *
+   * This is the episodic layer: facts record what is true, episodes record that
+   * something *happened* — who was there, what was decided, how it ended. It is
+   * what lets "上次那次" resolve to anything at all, and it is the one form of
+   * memory a flat fact store cannot express.
+   *
+   * The summary is the L0 handle *and* the basis for the file name, so listing
+   * episodes is already an index: you can answer "when did we talk about this"
+   * from the listing alone, without reading a single body.
+   *
+   * Episodes never consolidate with each other. Two conversations about the same
+   * topic are two events, not a duplicate claim.
+   */
+  async checkpoint(input: CheckpointInput): Promise<WriteResult> {
+    const summary = input.summary.trim();
+    if (!summary) throw new RecordValidationError('checkpoint needs a summary');
+
+    const result = await this.write({
+      name: '',
+      abstract: summary,
+      body: input.body ?? summary,
+      type: 'episode',
+      group: 'episode',
+      salience: input.salience ?? 6,
+      links: input.facts ?? [],
+      provenance: input.sessionId ? [`${input.sessionId}#episode`] : [],
+      validFrom: input.at ? input.at.toISOString() : undefined,
+    });
+    return result;
+  }
+
+  /**
+   * Episodes, newest first. Title-only by design: this is the listing an agent
+   * reads before deciding whether to open one.
+   */
+  episodes(limit = 10): EpisodeSummary[] {
+    return [...this.records.values()]
+      .filter((r) => r.type === 'episode' && !r.invalidAt)
+      .sort((a, b) => String(b.validFrom).localeCompare(String(a.validFrom)))
+      .slice(0, Math.max(1, limit))
+      .map((record) => ({
+        name: record.name,
+        title: record.abstract,
+        at: record.validFrom,
+        facts: record.links,
+        path: this.store.relativePathFor(record).split(path.sep).join('/'),
+      }));
+  }
+
+  /** Episodes as the one-line-per-item block a model can read cheaply. */
+  episodeLines(limit = 10): string[] {
+    return this.episodes(limit).map(
+      (episode) => `- ${episode.title} · ${episode.at.slice(0, 10)} · ${episode.path}`,
+    );
+  }
+
+  // --------------------------------------------------------------- intend --
   /** Register a delayed intention. Triggers on a timestamp or on event keywords. */
   async intend(input: {
     name?: string;

@@ -208,7 +208,12 @@ export class Mnemo {
         // Disabling this writes every claim as a new record: duplicates pile up and a
         // changed mind leaves two live beliefs. `npm run bench` quantifies the cost.
         const candidates = this.config.consolidation.enabled
-            ? [...this.records.values()].filter((r) => !r.invalidAt && r.name !== record.name && r.type === record.type)
+            ? [...this.records.values()].filter((r) => !r.invalidAt &&
+                r.name !== record.name &&
+                r.type === record.type &&
+                // Episodes are unique by nature: two conversations about the same
+                // topic are two events, not a duplicate claim.
+                r.type !== 'episode')
             : [];
         const match = bestMatch(record, candidates);
         let relation = 'created';
@@ -469,6 +474,60 @@ export class Mnemo {
         await this.store.update(record);
         this.reindexOne(record);
         return true;
+    }
+    // -------------------------------------------------------------- episode --
+    /**
+     * Collapse a stretch of conversation into one episode.
+     *
+     * This is the episodic layer: facts record what is true, episodes record that
+     * something *happened* — who was there, what was decided, how it ended. It is
+     * what lets "上次那次" resolve to anything at all, and it is the one form of
+     * memory a flat fact store cannot express.
+     *
+     * The summary is the L0 handle *and* the basis for the file name, so listing
+     * episodes is already an index: you can answer "when did we talk about this"
+     * from the listing alone, without reading a single body.
+     *
+     * Episodes never consolidate with each other. Two conversations about the same
+     * topic are two events, not a duplicate claim.
+     */
+    async checkpoint(input) {
+        const summary = input.summary.trim();
+        if (!summary)
+            throw new RecordValidationError('checkpoint needs a summary');
+        const result = await this.write({
+            name: '',
+            abstract: summary,
+            body: input.body ?? summary,
+            type: 'episode',
+            group: 'episode',
+            salience: input.salience ?? 6,
+            links: input.facts ?? [],
+            provenance: input.sessionId ? [`${input.sessionId}#episode`] : [],
+            validFrom: input.at ? input.at.toISOString() : undefined,
+        });
+        return result;
+    }
+    /**
+     * Episodes, newest first. Title-only by design: this is the listing an agent
+     * reads before deciding whether to open one.
+     */
+    episodes(limit = 10) {
+        return [...this.records.values()]
+            .filter((r) => r.type === 'episode' && !r.invalidAt)
+            .sort((a, b) => String(b.validFrom).localeCompare(String(a.validFrom)))
+            .slice(0, Math.max(1, limit))
+            .map((record) => ({
+            name: record.name,
+            title: record.abstract,
+            at: record.validFrom,
+            facts: record.links,
+            path: this.store.relativePathFor(record).split(path.sep).join('/'),
+        }));
+    }
+    /** Episodes as the one-line-per-item block a model can read cheaply. */
+    episodeLines(limit = 10) {
+        return this.episodes(limit).map((episode) => `- ${episode.title} · ${episode.at.slice(0, 10)} · ${episode.path}`);
     }
     // --------------------------------------------------------------- intend --
     /** Register a delayed intention. Triggers on a timestamp or on event keywords. */

@@ -78,10 +78,12 @@ function resolveExisting(flags, mnemo) {
 const USAGE = `mnemo — token-thrifty, human-like agent memory
 
   write       --dir <root> --body <text> [--name <slug>] [--abstract <text>]
-              [--type fact|preference|event|skill|intention] [--group <g>]
+              [--type fact|preference|event|episode|skill|intention] [--group <g>]
               [--salience 1-10] [--hop 0] [--subject <principal>] [--speaker <principal>]
   recall      --dir <root> [--query <text>] [--goal <text>] [--limit 8] [--faint] [--as-of <iso>]
   read        --dir <root> --name <slug> [--l2]
+  episodes    --dir <root> [--limit 10]
+  checkpoint  --dir <root> --summary <text> [--session <id>] [--facts a,b] [--body <text>]
   intend      --dir <root> --what <text> (--at <iso> | --on <kw1,kw2>) [--salience 1-10]
   due         --dir <root> [--context <text>]
   ctx         --dir <root> [--user <message>] [--system <text>]
@@ -186,6 +188,38 @@ async function main() {
         // argv removes the class of issue entirely rather than arguing about one
         // instance of it. They remain one function call away for an application that
         // already holds a record reference.
+        case 'episodes': {
+            const limit = num(flags, 'limit') ?? 10;
+            const list = mnemo.episodes(limit);
+            if (json) {
+                console.log(JSON.stringify(list, null, 2));
+            }
+            else if (list.length === 0) {
+                console.log('(还没有情节)');
+            }
+            else {
+                for (const line of mnemo.episodeLines(limit))
+                    console.log(line);
+            }
+            return;
+        }
+        case 'checkpoint': {
+            const result = await mnemo.checkpoint({
+                summary: required(flags, 'summary'),
+                body: str(flags, 'body'),
+                sessionId: str(flags, 'session'),
+                facts: (str(flags, 'facts') ?? '')
+                    .split(',')
+                    .map((s) => s.trim())
+                    .filter(Boolean),
+                salience: num(flags, 'salience'),
+            });
+            if (json)
+                console.log(JSON.stringify(result, null, 2));
+            else
+                console.log(`✓ 情节 ${result.record.name} → ${result.path}\n  ${result.record.abstract}`);
+            return;
+        }
         case 'intend': {
             const at = str(flags, 'at');
             const on = str(flags, 'on');

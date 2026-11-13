@@ -90,6 +90,7 @@ function safeFileName(file: string): string {
 export function dirForType(type: MemoryType): StoreDir {
   switch (type) {
     case 'event':
+    case 'episode':
       return 'episodic';
     case 'persona':
       return 'persona';

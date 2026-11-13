@@ -79,6 +79,7 @@ function safeFileName(file) {
 export function dirForType(type) {
     switch (type) {
         case 'event':
+        case 'episode':
             return 'episodic';
         case 'persona':
             return 'persona';

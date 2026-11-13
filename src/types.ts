@@ -14,6 +14,7 @@ export type MemoryType =
   | 'skill'
   | 'hearsay'
   | 'event'
+  | 'episode'
   | 'persona'
   | 'intention';
 
@@ -23,6 +24,7 @@ export const MEMORY_TYPES: readonly MemoryType[] = [
   'skill',
   'hearsay',
   'event',
+  'episode',
   'persona',
   'intention',
 ];

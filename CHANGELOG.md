@@ -4,6 +4,36 @@ All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] — 2026-11-13
+
+情节记忆：事实记的是「什么是真的」，情节记的是「发生过什么」。
+
+### Added
+
+**Episodes**（`checkpoint()` / `episodes()` / `episodeLines()`）
+- `checkpoint()` 把一段对话压成一条 episode：摘要即标题、即 L0 手柄、即文件名来源，
+  可选链接到它涉及的事实记录。
+- `episodes()` / `episodeLines()` 返回一行一条的列表（标题 · 日期 · 路径）——
+  **列出来就是索引**，回答「上次那次是什么时候」不需要读任何正文、不需要查询。
+- 新增 `episode` 记忆类型，落在 `episodic/` 下。
+- `episode` 不参与合并：两次聊同一个话题是两件事，不是重复陈述。
+- CLI 新增 `checkpoint` 与 `episodes` 两个命令。
+
+**为什么不是 JSON 文件名当摘要**
+- 中文文件名跨平台会被 zip / git 搞乱；本仓库就出过一类 bug，削掉 CJK 之后
+  20 个主题塌成同一个文件名。
+- JSON 把正文的换行变成 `\n` 汤，diff 不可读，不能手改。
+- 文件名列表只能列、不能查；BM25 可以。
+- 文件名要唯一就得加哈希后缀，加了就不像概括了。
+
+所以文件名仍是 slug，摘要仍是第一行；真正有用的那部分——**便宜的列表**——由
+`episodes()` 提供。
+
+### Changed
+
+- 合并候选集中排除 `episode` 类型。
+- 记忆类型枚举、目录映射、默认前瞻钩子同步支持 `episode`。
+
 ## [0.5.0] — 2026-11-13
 
 DSH Go 插件。`dsh-go/` 是一个独立的 npm 包（`mnemo-dsh-go`），按 DSH Go 的原生插件协议声明界面。
@@ -254,3 +284,4 @@ First release. Zero runtime dependencies; Node 20+.
 [0.3.0]: https://github.com/jincheng3870682453-hash/mnemo/releases/tag/v0.3.0
 [0.4.0]: https://github.com/jincheng3870682453-hash/mnemo/releases/tag/v0.4.0
 [0.5.0]: https://github.com/jincheng3870682453-hash/mnemo/releases/tag/v0.5.0
+[0.6.0]: https://github.com/jincheng3870682453-hash/mnemo/releases/tag/v0.6.0

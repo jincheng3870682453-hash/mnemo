@@ -1,6 +1,6 @@
 {
   "name": "mnemo-dsh-go",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": false,
   "description": "mnemo 记忆库的 DSH Go 原生插件：输入框胶囊、状态条、记忆面板。App 只画 JSON，不执行代码。",
   "type": "module",
