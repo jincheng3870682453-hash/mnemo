@@ -10,6 +10,7 @@
  */
 export { Mnemo, DEFAULT_SYSTEM, outlineOf } from './mnemo.js';
 export { DEFAULT_CONFIG, mergeConfig, MEMORY_TYPES, cueToString, parseCue, } from './types.js';
+export { AdaptiveTuner, ARMS, FEATURE_DIM, normaliseFeatures, mergeOverrides } from './adaptive/tuner.js';
 export { FileStore, PathEscapeError, dirForType } from './store/file-store.js';
 export { serializeRecord, deserializeRecord } from './store/frontmatter.js';
 export { BM25Index } from './index/bm25.js';
