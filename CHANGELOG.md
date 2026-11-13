@@ -4,6 +4,13 @@ All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.1] — 2026-11-13
+
+### Fixed
+
+- npm 包中的 `plugin/payload/dist` 缺少 `adaptive/` 目录：0.7.0 打包时插件产物尚未重新生成。
+- 文档页面背景改为深蓝紫渐变。
+
 ## [0.7.0] — 2026-11-13
 
 自适应调参、真实对话基准、图表与交互演示。

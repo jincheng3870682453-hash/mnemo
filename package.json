@@ -1,6 +1,6 @@
 {
   "name": "mnemo-memory",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Token-thrifty, human-like long-term memory for AI agents. Zero runtime dependencies. Ships an MCP server.",
   "type": "module",
   "main": "./dist/src/index.js",
