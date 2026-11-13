@@ -64,6 +64,7 @@ export function createRecord({ input, gist, attribution, config, now }: CreateRe
     stability: initialStability(salience),
     accessCount: 0,
     lastAccess: null,
+    suppressedAt: null,
     confidence: clamp(input.confidence ?? 0.9, 0, 1),
     subject: attribution.subject,
     speaker: attribution.speaker,

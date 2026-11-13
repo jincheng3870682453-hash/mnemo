@@ -18,6 +18,7 @@
  */
 import { estimateTokens, truncate } from '../util/text.js';
 import { daysBetween } from '../util/time.js';
+import { renderSelection, selectByValuePerToken } from './budget.js';
 const SECTION = {
     system: '## 你的角色',
     tools: '## 可用工具',
@@ -79,7 +80,14 @@ export function assemble(input, budget) {
     if (input.pending) {
         suffixParts.push(section(SECTION.pending, input.pending));
     }
-    if (input.retrieved && input.retrieved.length > 0) {
+    if (input.retrievedItems && input.retrievedItems.length > 0) {
+        const selection = selectByValuePerToken(input.retrievedItems, budget.retrieved);
+        if (selection.truncated) {
+            warnings.push(`retrieved: kept ${selection.kept.length}, dropped ${selection.dropped} over budget`);
+        }
+        suffixParts.push(section(SECTION.retrieved, renderSelection(selection)));
+    }
+    else if (input.retrieved && input.retrieved.length > 0) {
         const block = input.retrieved.join('\n');
         const t = trimToBudget(block, budget.retrieved, '相关记忆');
         if (t.trimmed)

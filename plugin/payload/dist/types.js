@@ -60,6 +60,12 @@ export const DEFAULT_CONFIG = {
     consolidation: {
         enabled: true,
     },
+    competition: {
+        enabled: true,
+        threshold: 0.75,
+        fadeDays: 5,
+        maxPenalty: 0.4,
+    },
     abstractMaxChars: 60,
     verbatimTtlDays: 90,
     offloadThresholdTokens: 400,
@@ -76,6 +82,7 @@ export function mergeConfig(partial) {
         budget: { ...DEFAULT_CONFIG.budget, ...(partial.budget ?? {}) },
         vector: { ...DEFAULT_CONFIG.vector, ...(partial.vector ?? {}) },
         consolidation: { ...DEFAULT_CONFIG.consolidation, ...(partial.consolidation ?? {}) },
+        competition: { ...DEFAULT_CONFIG.competition, ...(partial.competition ?? {}) },
         abstractMaxChars: partial.abstractMaxChars ?? DEFAULT_CONFIG.abstractMaxChars,
         verbatimTtlDays: partial.verbatimTtlDays ?? DEFAULT_CONFIG.verbatimTtlDays,
         offloadThresholdTokens: partial.offloadThresholdTokens ?? DEFAULT_CONFIG.offloadThresholdTokens,

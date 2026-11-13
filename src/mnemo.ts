@@ -27,6 +27,8 @@ import { bindAttribution, attributionLabel, decisionEligible } from './memory/at
 import { encodeGist, heuristicGist } from './memory/gist.js';
 import { createRecord, indexableText, RecordValidationError } from './memory/record.js';
 import { erodeConfidence, reinforce, tier as retentionTier } from './memory/decay.js';
+import { probeMetamemory, renderProbe, type MetamemoryProbe } from './memory/metamemory.js';
+import { suppressCompetitors } from './memory/competition.js';
 import { coerceCue, harvestCues, mergeCues } from './memory/cues.js';
 import { bestMatch, mergeIntoRecord, refineWithLLM, supersedeRecord } from './memory/consolidation.js';
 import { retrieve, renderL0, type RetrieveQuery, type ScoredMemory } from './retrieval/retrieve.js';
@@ -398,7 +400,50 @@ export class Mnemo {
         // A failed access-count update must never fail a read.
       });
     }
+
+    // Retrieval-induced forgetting: the winner quiets its near-duplicates for a
+    // few days. Deliberately weak (see memory/competition.ts) so a real second
+    // answer is never lost.
+    if (this.config.competition.enabled && hits.length > 0) {
+      const now = new Date();
+      const suppressed = suppressCompetitors(
+        hits[0].record,
+        [...this.records.values()],
+        this.config.competition,
+        now,
+      );
+      for (const record of suppressed) {
+        void this.store.update(record).catch(() => undefined);
+      }
+    }
+
     return hits;
+  }
+
+  /**
+   * Feeling of knowing: ask whether memory has anything, without paying for a
+   * full recall. Returns a pointer at most — never a body.
+   *
+   * Synchronous and lexical-only by design: the whole point is that this is
+   * cheaper than the thing it might save you from doing.
+   */
+  feel(query: string): MetamemoryProbe {
+    return probeMetamemory({
+      index: this.index,
+      records: [...this.records.values()],
+      query,
+      now: new Date(),
+      config: this.config,
+      pathOf: (name: string) => {
+        const record = this.find(name);
+        return record ? this.store.relativePathFor(record).split(path.sep).join('/') : '';
+      },
+    });
+  }
+
+  /** The probe rendered as the single line a model sees. */
+  feelLine(query: string): string {
+    return renderProbe(this.feel(query));
   }
 
   /** Same as recall, but returns the rendered one-line handles. */
@@ -644,12 +689,22 @@ export class Mnemo {
     options: { system?: string; userMessage?: string } = {},
   ): Promise<AssembledContext> {
     const pending = this.pendingLines();
-    const retrieved = await this.recallLines({ limit: this.config.retrieve.limit });
+    const now = new Date();
+    // Fetch a wider candidate pool than the budget will hold, then let the
+    // value-per-token allocator decide what is worth the tokens.
+    const hits = await this.recall({
+      limit: Math.max(this.config.retrieve.limit * 3, 12),
+    });
+    const retrievedItems = hits.map((hit) => ({
+      id: hit.record.name,
+      text: renderL0(hit, now),
+      score: hit.score,
+    }));
     return this.buildContext({
       system: options.system ?? DEFAULT_SYSTEM,
       memoryIndex: this.memoryIndex(),
       pending: pending || undefined,
-      retrieved,
+      retrievedItems,
       userMessage: options.userMessage ?? '',
     });
   }

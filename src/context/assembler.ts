@@ -20,6 +20,7 @@
 import type { BudgetConfig, MemoryRecord } from '../types.js';
 import { estimateTokens, truncate } from '../util/text.js';
 import { daysBetween } from '../util/time.js';
+import { renderSelection, selectByValuePerToken, type BudgetItem } from './budget.js';
 
 export interface ContextInput {
   /** Stable system prompt. Must not contain timestamps, ids or counters. */
@@ -34,6 +35,11 @@ export interface ContextInput {
   pending?: string;
   /** L0 lines from `retrieve()`. */
   retrieved?: readonly string[];
+  /**
+   * Scored L0 items. When supplied, the retrieved budget is filled by value per
+   * token instead of truncating the list — see context/budget.ts.
+   */
+  retrievedItems?: ReadonlyArray<BudgetItem>;
   /** Compact task state for long-running work. */
   taskCanvas?: string;
   /** This turn's user message. */
@@ -124,7 +130,15 @@ export function assemble(input: ContextInput, budget: BudgetConfig): AssembledCo
   if (input.pending) {
     suffixParts.push(section(SECTION.pending, input.pending));
   }
-  if (input.retrieved && input.retrieved.length > 0) {
+  if (input.retrievedItems && input.retrievedItems.length > 0) {
+    const selection = selectByValuePerToken(input.retrievedItems, budget.retrieved);
+    if (selection.truncated) {
+      warnings.push(
+        `retrieved: kept ${selection.kept.length}, dropped ${selection.dropped} over budget`,
+      );
+    }
+    suffixParts.push(section(SECTION.retrieved, renderSelection(selection)));
+  } else if (input.retrieved && input.retrieved.length > 0) {
     const block = input.retrieved.join('\n');
     const t = trimToBudget(block, budget.retrieved, '相关记忆');
     if (t.trimmed) warnings.push(`retrieved trimmed: dropped ${t.dropped} lines`);

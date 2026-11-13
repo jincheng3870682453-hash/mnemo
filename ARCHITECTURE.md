@@ -165,6 +165,67 @@ that difference is most of what "having a sense of time" amounts to.
 
 ---
 
+## 4.5 Metamemory: knowing whether you know
+
+Cognitive psychology separates two signals (Nelson & Narens, 1990):
+
+- **Feeling of knowing (FOK)** — anticipatory, *before* retrieval. Cheap, fuzzy.
+- **Confidence** — retrospective, *after* an answer exists. Expensive, sharper.
+
+Most memory layers only have the second. `mem.feel(query)` adds the first: one
+line, roughly 25 tokens, answering "does memory have anything about this?" with
+three values — `no` / `vague` / `yes` — plus at most a pointer.
+
+**Why it saves tokens.** A full recall costs a round trip and ~30 tokens per hit,
+and the caller may then read a body. The probe is 43% cheaper than a full recall
+across the benchmark's queries, and infinitely cheaper when the honest answer is
+"nothing" — it replaces recall → read → a disappointed model with one line.
+
+**Confidence is query coverage, not rank.** The obvious implementation is to use
+BM25's normalised score — and it is wrong: that score is divided by the best hit
+in the result set, so the top hit is *always* 1.0 and the probe would report
+certainty on any query at all. Coverage is what fraction of the query's
+multi-character tokens appear in the record, thresholded at 0.8. Multi-character
+because CJK unigrams match almost anything and inflate confidence.
+
+**Calibration caveat.** Pre-retrieval confidence in LLMs is *weakly calibrated*
+(NeurIPS 2026), and hallucinated answers retain elevated confidence. So the probe
+is deliberately coarse: three buckets, never a probability, never a body.
+
+---
+
+## 4.6 Retrieval-induced forgetting: rivals go quiet
+
+In people, retrieving a memory temporarily suppresses competitors sharing its
+cues. Retrieve "her birthday is in May" and the wrong month is harder to reach for
+a while. It is a sharpening mechanism, not a bug: without it, every recall returns
+twelve near-identical candidates forever.
+
+`suppressCompetitors()` runs after a recall: near-duplicate records of the winner
+get a `suppressedAt` stamp, and `competitionFactor()` multiplies their score by
+`1 - 0.4·e^(-days/5)`. So a rival drops at most 40%, and is fully back within a
+couple of weeks.
+
+**The two measured facts that shape it** (arXiv:2610.34977):
+
+1. Suppressing persistent competitors can expose evidence you would otherwise
+   never see.
+2. Suppressing *repeatedly useful* memories is the complementary failure mode.
+
+So `shouldSuppress()` refuses to touch a record when:
+
+| Condition | Reason |
+|---|---|
+| `accessCount > winner.accessCount + 1` | it is a second real answer, not a rival |
+| `salience >= 9` | the user marked it important |
+| different `type` | different kinds of claim are not substitutes |
+| abstract overlap < 0.75 | not really a competitor |
+
+This is suppression of *noise*, never of answers. Everything remains recoverable:
+the stamp fades, and `--as-of` ignores it entirely.
+
+---
+
 ## 5. Consolidation: four outcomes, and it never overwrites
 
 | relation | meaning | action |
@@ -254,6 +315,28 @@ Four rules, encoded in the API rather than in documentation:
 
 `buildMemoryIndex()` caps the resident index at 12 lines. Everything else stays
 reachable through `recall()` but is not resident.
+
+### 7.1 Filling the budget by value per token
+
+Taking the top *k* — or concatenating until the budget runs out — wastes it. A
+200-token memory ranked third may be worth less per token than a 40-token memory
+ranked fifth, and truncating mid-list silently drops whatever came last.
+
+`selectByValuePerToken()` states the problem the way the retrieval literature does
+(arXiv:2610.34673): maximise total value subject to total token cost, then fill.
+Greedy by value-per-token is within a constant factor of optimal and is
+deterministic, which matters more here than the last few percent.
+
+Two deliberate rules:
+
+- **The single best item is always included if it fits the budget at all.** A
+  budget that returns nothing relevant is worse than a slightly over-budget one.
+- **Dropped items are announced.** Silent truncation is the failure this exists to
+  prevent: a model that does not know it is seeing a partial list answers as if it
+  has everything.
+
+`bootContext()` fetches three times the display limit and lets the allocator
+choose, rather than asking retrieval to pre-decide.
 
 ---
 
@@ -359,6 +442,9 @@ before asserting detail.*
 | `consolidation.test.ts` | contradiction-before-duplicate regression, merge idempotence |
 | `intentions.test.ts` | time and event triggers, overdue rendering |
 | `retrieve.test.ts` | four signals, cue-only recall, as-of, faint gating, L0 shape |
+| `metamemory.test.ts` | probe never claims certainty on a weak match, never returns a body |
+| `competition.test.ts` | suppression is weak, temporary, and refuses proven-useful records |
+| `budget.test.ts` | value-per-token fill, best item survives, drops are announced |
 | `assembler.test.ts` | **prefix byte-stability across turns**, deterministic tool order |
 | `offload.test.ts` | threshold, paging, traversal rejection |
 | `store.test.ts` | index is disposable, corrupt file isolation, path escapes |

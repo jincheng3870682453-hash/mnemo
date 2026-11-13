@@ -4,6 +4,50 @@ All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] — 2026-11-13
+
+Three mechanisms that are both cheaper and more human, plus the contribution
+infrastructure.
+
+### Added
+
+**Metamemory — feeling of knowing** (`mem.feel()`, `mem.feelLine()`)
+- Pre-retrieval probe: one line, three coarse buckets (`no` / `vague` / `yes`),
+  at most a pointer. 43% cheaper than a full recall on the benchmark corpus.
+- Confidence is query *coverage* (≥0.8 of multi-character tokens), not BM25's
+  normalised score — that one is divided by the best hit, so the top hit is
+  always 1.0 and would claim certainty on any query.
+- Exposed over MCP as `memory_recall` with `probe: true`, keeping the tool count
+  at six.
+
+**Retrieval-induced forgetting** (`memory/competition.ts`)
+- Recalling a memory quietly demotes its near-duplicates for a few days
+  (`1 - 0.4·e^(-days/5)`), then they come back.
+- Refuses to suppress a record that is itself frequently retrieved or highly
+  salient — the documented failure mode from arXiv:2610.34977.
+- New `competition` config block; `ScoredMemory.competition` reports the factor.
+
+**Value-per-token budget fill** (`context/budget.ts`)
+- `selectByValuePerToken()` maximises value under a token cost instead of taking
+  the top k or truncating a list; the single best item always survives.
+- Dropped items are announced in the block, never silently omitted.
+- `bootContext()` now fetches 3× the display limit and lets the allocator choose.
+
+**Contribution infrastructure**
+- `CONTRIBUTING.md` — the three invariants a change must not break, what fits,
+  commit convention, PR checklist, AI-assisted contribution rules
+- `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1), `SECURITY.md` with the threat
+  model that names role-grounding misattribution as in-scope
+- Issue templates (bug / feature) and a PR template
+- `IDEAS.md` — the unimplemented directions, each with the human phenomenon it
+  imitates, how it saves tokens, its failure mode, and a value/risk rating
+
+### Changed
+
+- `README.md` restructured as a landing page: proof above the fold, one-command
+  install, deep design moved into `ARCHITECTURE.md` and `IDEAS.md`.
+- `Mnemo.recall()` suppresses competitors of the top hit after reinforcing it.
+
 ## [0.2.0] — 2026-11-13
 
 Renamed to `mnemo-memory` (the bare name `mnemo` is taken on npm) and shipped the
@@ -139,3 +183,4 @@ First release. Zero runtime dependencies; Node 20+.
 
 [0.1.0]: https://github.com/jincheng3870682453-hash/mnemo/releases/tag/v0.1.0
 [0.2.0]: https://github.com/jincheng3870682453-hash/mnemo/releases/tag/v0.2.0
+[0.3.0]: https://github.com/jincheng3870682453-hash/mnemo/releases/tag/v0.3.0

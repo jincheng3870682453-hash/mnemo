@@ -47,6 +47,13 @@ export const TOOLS: McpTool[] = [
           type: 'boolean',
           description: 'Include memories whose retention has decayed below the active threshold.',
         },
+        probe: {
+          type: 'boolean',
+          description:
+            'Feeling-of-knowing mode: return one line saying whether memory has anything for ' +
+            'this query, and at most a pointer. Cheaper than a full recall. Use it when you are ' +
+            'about to say "I do not know" and want to check first.',
+        },
       },
     },
   },
@@ -231,6 +238,9 @@ export async function callTool(
 ): Promise<ToolCallResult> {
   switch (name) {
     case 'memory_recall': {
+      if (asBoolean(input, 'probe') && asString(input, 'query')) {
+        return text(mem.feelLine(asString(input, 'query') as string));
+      }
       const hits = await mem.recall({
         query: asString(input, 'query'),
         goal: asString(input, 'goal'),

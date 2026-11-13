@@ -20,6 +20,7 @@ import { cueToString } from '../types.js';
 import type { BM25Index } from '../index/bm25.js';
 import { retention, tier, type RetentionTier } from '../memory/decay.js';
 import { decisionEligible } from '../memory/attribution.js';
+import { competitionFactor } from '../memory/competition.js';
 import { tokenOverlap, tokenize, truncate } from '../util/text.js';
 import { daysBetween, parseIso } from '../util/time.js';
 
@@ -58,6 +59,8 @@ export interface ScoredMemory {
   tier: RetentionTier;
   /** False => may be mentioned, must not change behaviour. */
   decisionEligible: boolean;
+  /** 0..1 multiplier from retrieval-induced forgetting. 1 means unsuppressed. */
+  competition: number;
   /** The one-line L0 handle. This is what enters the prompt. */
   l0: string;
   /** Relative path, so a follow-up `read` never has to search. */
@@ -146,12 +149,17 @@ export function retrieve(engine: RetrievalEngine, query: RetrieveQuery): ScoredM
       weights.relevance * relevance +
       weights.goalFit * goalFit;
 
+    // Retrieval-induced forgetting: a rival of something recently recalled is
+    // quieter for a few days. Never zero, so it can always come back.
+    const competition = competitionFactor(record, now, cfg.competition);
+
     scored.push({
       record,
-      score,
+      score: score * competition,
       signals: { recency, importance, relevance, goalFit },
       tier: retentionTier,
       decisionEligible: decisionEligible(record),
+      competition,
       l0: '',
       path: engine.pathOf(record.name),
     });

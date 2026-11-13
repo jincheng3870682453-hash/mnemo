@@ -58,6 +58,12 @@ async function main(): Promise<void> {
       console.log(' ', line);
     }
 
+    // ---- 3b. metamemory: does it know, before paying for a recall? ---------
+    console.log('\n[feel: 客套 开场白]');
+    console.log(' ', mem.feelLine('客套 开场白'));
+    console.log('[feel: 某个完全没记录过的话题]');
+    console.log(' ', mem.feelLine('量子纠缠 光谱 低温'));
+
     // ---- 4. detail is a separate, explicit, expensive step -----------------
     const detail = await mem.read('pref-direct', 'l2');
     console.log('\n[read l2] cost =', detail?.tokens, 'tok');

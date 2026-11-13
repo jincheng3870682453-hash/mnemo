@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 安全漏洞
+    url: https://github.com/jincheng3870682453-hash/mnemo/security/advisories/new
+    about: 请不要为安全问题开公开 issue，使用私密安全通告。
+  - name: 使用问题 / 方向讨论
+    url: https://github.com/jincheng3870682453-hash/mnemo/discussions
+    about: 安装、配置、设计取舍这类问题先在这里聊。

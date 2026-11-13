@@ -91,6 +91,13 @@ export interface MemoryRecord {
   accessCount: number;
   /** ISO timestamp of the last retrieval. Recency is measured from here, not created. */
   lastAccess: string | null;
+  /**
+   * ISO timestamp of the last time this record was suppressed as a *competitor*
+   * of a stronger, similar memory. Retrieval-induced forgetting, made reversible:
+   * the penalty fades over days and is never applied to a record that is itself
+   * frequently retrieved. See memory/competition.ts.
+   */
+  suppressedAt: string | null;
   /** Calibrated confidence, 0..1. Eroded each time the gist is reconstructed. */
   confidence: number;
 
@@ -211,12 +218,35 @@ export interface ConsolidationConfig {
   enabled: boolean;
 }
 
+/**
+ * Retrieval-induced forgetting.
+ *
+ * Recalling one memory temporarily quiets its near-duplicates, the way retrieving
+ * one fact makes the wrong answer harder to reach for a while. It sharpens recall
+ * and keeps twelve near-identical candidates out of the prompt.
+ *
+ * It is deliberately weak and reversible: a 2026 study found that suppressing
+ * persistent competitors helps, while suppressing *repeatedly useful* memories is
+ * the complementary failure mode. `shouldSuppress()` refuses to touch a record
+ * that is itself frequently retrieved or highly salient.
+ */
+export interface CompetitionConfig {
+  enabled: boolean;
+  /** Abstract token overlap above which two records are rivals. */
+  threshold: number;
+  /** Days for the penalty to fade. Short on purpose: this is not forgetting. */
+  fadeDays: number;
+  /** Maximum share of score removed right after suppression, 0..1. */
+  maxPenalty: number;
+}
+
 export interface MnemoConfig {
   decay: DecayConfig;
   retrieve: RetrieveConfig;
   budget: BudgetConfig;
   vector: VectorConfig;
   consolidation: ConsolidationConfig;
+  competition: CompetitionConfig;
   /** Soft cap on `abstract`. Longer abstracts are rejected at write time. */
   abstractMaxChars: number;
   /** Days after which a verbatim/episodic body is condensed and archived. */
@@ -255,6 +285,12 @@ export const DEFAULT_CONFIG: MnemoConfig = {
   consolidation: {
     enabled: true,
   },
+  competition: {
+    enabled: true,
+    threshold: 0.75,
+    fadeDays: 5,
+    maxPenalty: 0.4,
+  },
   abstractMaxChars: 60,
   verbatimTtlDays: 90,
   offloadThresholdTokens: 400,
@@ -271,6 +307,7 @@ export function mergeConfig(partial?: Partial<MnemoConfig>): MnemoConfig {
     budget: { ...DEFAULT_CONFIG.budget, ...(partial.budget ?? {}) },
     vector: { ...DEFAULT_CONFIG.vector, ...(partial.vector ?? {}) },
     consolidation: { ...DEFAULT_CONFIG.consolidation, ...(partial.consolidation ?? {}) },
+    competition: { ...DEFAULT_CONFIG.competition, ...(partial.competition ?? {}) },
     abstractMaxChars: partial.abstractMaxChars ?? DEFAULT_CONFIG.abstractMaxChars,
     verbatimTtlDays: partial.verbatimTtlDays ?? DEFAULT_CONFIG.verbatimTtlDays,
     offloadThresholdTokens:

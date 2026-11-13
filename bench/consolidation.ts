@@ -39,7 +39,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { Mnemo } from '../src/index.js';
+import { Mnemo, estimateTokens } from '../src/index.js';
 
 /** Each entry is a distinct subject, so topics do not collapse into each other. */
 const SUBJECTS: Array<[key: string, predicate: string]> = [
@@ -176,6 +176,51 @@ async function run(label: string, enabled: boolean, topicCount: number): Promise
 
 const pct = (value: number): string => `${(value * 100).toFixed(0)}%`;
 
+/**
+ * How much a feeling-of-knowing probe saves versus a full recall.
+ *
+ * Both sides are measured on the same queries against the same store, using the
+ * library's own token estimator, so the ratio is honest even though the corpus is
+ * synthetic.
+ */
+async function measureProbe(topicCount: number): Promise<{ probe: number; recall: number; missRate: string }> {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'mnemo-probe-'));
+  try {
+    const mem = await Mnemo.open(path.join(dir, 'store'), { userPrincipal: 'user:bench' });
+    for (let i = 0; i < topicCount; i++) {
+      const t = topicAt(i);
+      await mem.write({
+        name: `${t.key}-base`,
+        abstract: t.base,
+        body: t.base,
+        type: 'preference',
+        subject: 'user:bench',
+        salience: 6,
+      });
+    }
+
+    let probeTokens = 0;
+    let recallTokens = 0;
+    let noFeeling = 0;
+
+    for (let i = 0; i < topicCount; i++) {
+      const t = topicAt(i);
+      probeTokens += estimateTokens(mem.feelLine(t.key)) + 12; // + call overhead
+      const lines = await mem.recallLines({ query: t.key, limit: 8 });
+      recallTokens += lines.reduce((sum, line) => sum + estimateTokens(line), 0) + 12;
+      if (mem.feel(t.key).feeling === 'no') noFeeling++;
+    }
+
+    return {
+      probe: probeTokens,
+      recall: recallTokens,
+      missRate: pct(noFeeling / topicCount),
+    };
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
 function row(label: string, off: string, on: string): string {
   return `  ${label.padEnd(14)} ${off.padStart(12)} ${on.padStart(12)}\n`;
 }
@@ -203,6 +248,15 @@ async function main(): Promise<void> {
   process.stdout.write(
     `\nstore ${pct(reduction)} smaller · stale beliefs at top-1: ${off.staleTop1} -> ${on.staleTop1}\n`,
   );
+
+  const probe = await measureProbe(topicCount);
+  const saving = probe.recall === 0 ? 0 : 1 - probe.probe / probe.recall;
+  process.stdout.write(
+    `\nfeeling-of-knowing probe over ${topicCount} queries\n` +
+      `  probe ${probe.probe} tok · recall ${probe.recall} tok · ${pct(saving)} cheaper\n` +
+      `  queries with no feeling at all: ${probe.missRate}\n`,
+  );
+
   process.stdout.write(
     '\nCaveat: synthetic corpus authored alongside the consolidator. This is a\n' +
       'regression check, not evidence that consolidation helps your workload.\n\n',

@@ -35,6 +35,7 @@ export type {
   BudgetConfig,
   VectorConfig,
   ConsolidationConfig,
+  CompetitionConfig,
   WriteInput,
   Cue,
   Principal,
@@ -56,6 +57,14 @@ export { harvestCues, mergeCues, coerceCue } from './memory/cues.js';
 export { decideRelation, bestMatch, mergeIntoRecord, supersedeRecord } from './memory/consolidation.js';
 export type { Relation, ConsolidationPlan } from './memory/consolidation.js';
 export { createRecord, indexableText, RecordValidationError } from './memory/record.js';
+export { probeMetamemory, renderProbe } from './memory/metamemory.js';
+export type { Feeling, MetamemoryHint, MetamemoryProbe, ProbeInput } from './memory/metamemory.js';
+export {
+  competitionFactor,
+  shouldSuppress,
+  findCompetitors,
+  suppressCompetitors,
+} from './memory/competition.js';
 
 export { retrieve, renderL0 } from './retrieval/retrieve.js';
 export type { RetrieveQuery, ScoredMemory, Signals, RetrievalEngine } from './retrieval/retrieve.js';
@@ -66,6 +75,8 @@ export type { VectorHit } from './retrieval/vector-index.js';
 
 export { assemble, trimToBudget, stableToolBlock, buildMemoryIndex } from './context/assembler.js';
 export type { AssembledContext, ContextInput } from './context/assembler.js';
+export { selectByValuePerToken, renderSelection } from './context/budget.js';
+export type { BudgetItem, BudgetSelection } from './context/budget.js';
 export { maybeOffload, readOffload } from './context/offload.js';
 export type { OffloadResult, OffloadReadOptions } from './context/offload.js';
 

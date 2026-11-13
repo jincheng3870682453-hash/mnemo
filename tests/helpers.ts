@@ -19,6 +19,7 @@ export function makeRecord(overrides: Partial<MemoryRecord> = {}): MemoryRecord 
     stability: 1,
     accessCount: 0,
     lastAccess: null,
+    suppressedAt: null,
     confidence: 0.9,
     subject: null,
     speaker: null,
