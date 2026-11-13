@@ -1,0 +1,12 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.DS_Store
+.mnemo/
+temp/
+coverage/
+*.log
+.env
+.env.*
+!.env.example
+.mimosa/
