@@ -15,7 +15,28 @@ permissions:
   id-token: write # required for npm provenance
 
 jobs:
+  # `secrets` is not available in a job-level `if`, so it is promoted to an
+  # output first. Without this, every tag push turns the repo red simply because
+  # no token has been configured yet.
+  preflight:
+    runs-on: ubuntu-latest
+    outputs:
+      configured: ${{ steps.check.outputs.configured }}
+    steps:
+      - id: check
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -n "$NPM_TOKEN" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Publish skipped::NPM_TOKEN is not set. Add it in Settings → Secrets → Actions to publish from CI."
+          fi
+
   publish:
+    needs: preflight
+    if: needs.preflight.outputs.configured == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,24 +50,35 @@ jobs:
       - run: npm run build
       - run: npm run test:only
 
-      # The plugin payload is committed; if it drifted, refuse to publish.
+      # The plugin payloads are committed; if they drifted, refuse to publish.
       - run: npm run build:plugin
-      - run: git diff --exit-code -- plugin
+      - run: git diff --exit-code -- plugin dsh-go
 
-      - name: publish (dry run)
+      # The DSH Go plugin is its own package in the same repository.
+      - run: npm run check:dsh-go
+
+      - name: publish mnemo-memory (dry run)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
         run: npm publish --dry-run
 
-      - name: publish
+      - name: publish mnemo-memory
         if: ${{ github.event_name == 'push' || !inputs.dry_run }}
         run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: attach tarball to the release
+      - name: publish mnemo-dsh-go
+        if: ${{ github.event_name == 'push' || !inputs.dry_run }}
+        working-directory: dsh-go
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: attach tarballs to the release
         if: ${{ github.event_name == 'push' }}
         run: |
           npm pack
+          (cd dsh-go && npm pack && mv ./*.tgz ..)
           gh release upload "${GITHUB_REF_NAME}" ./*.tgz --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
