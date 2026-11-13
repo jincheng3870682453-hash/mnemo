@@ -1,7 +1,7 @@
 {
-  "name": "mnemo",
-  "version": "0.1.0",
-  "description": "Token-thrifty, human-like long-term memory for AI agents. Zero runtime dependencies.",
+  "name": "mnemo-memory",
+  "version": "0.2.0",
+  "description": "Token-thrifty, human-like long-term memory for AI agents. Zero runtime dependencies. Ships an MCP server.",
   "type": "module",
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",
@@ -9,13 +9,22 @@
     ".": {
       "types": "./dist/src/index.d.ts",
       "import": "./dist/src/index.js"
-    }
+    },
+    "./mcp": {
+      "types": "./dist/src/mcp/index.d.ts",
+      "import": "./dist/src/mcp/index.js"
+    },
+    "./package.json": "./package.json"
   },
   "bin": {
-    "mnemo": "./dist/src/cli.js"
+    "mnemo": "./dist/src/cli.js",
+    "mnemo-mcp": "./dist/src/mcp/server.js"
   },
   "files": [
     "dist/src",
+    "plugin",
+    "ARCHITECTURE.md",
+    "CHANGELOG.md",
     "README.md",
     "LICENSE"
   ],
@@ -24,15 +33,32 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "build:plugin": "npm run build && node scripts/build-plugin.mjs",
+    "verify:plugin": "npm run build:plugin && git diff --exit-code --stat -- plugin",
     "test": "npm run build && node --test dist/tests/*.test.js",
+    "test:only": "node --test dist/tests/*.test.js",
+    "bench": "npm run build --silent && node dist/bench/consolidation.js",
+    "mcp": "npm run build --silent && node dist/src/mcp/server.js",
     "cli": "npm run build --silent && node dist/src/cli.js",
     "example": "npm run build --silent && node dist/examples/basic.js",
-    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "prepublishOnly": "npm run build && npm run test:only"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jincheng3870682453-hash/mnemo.git"
+  },
+  "homepage": "https://github.com/jincheng3870682453-hash/mnemo#readme",
+  "bugs": {
+    "url": "https://github.com/jincheng3870682453-hash/mnemo/issues"
+  },
+  "author": "金呈",
   "keywords": [
     "llm",
     "agent",
     "memory",
+    "mcp",
+    "model-context-protocol",
     "context-engineering",
     "token-efficiency",
     "forgetting-curve",
@@ -40,6 +66,9 @@
     "rag"
   ],
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "devDependencies": {
     "@types/node": "^26.6.6",
     "typescript": "^5.6.0"

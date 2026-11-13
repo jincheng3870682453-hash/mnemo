@@ -184,10 +184,39 @@ export interface BudgetConfig {
   userMessage: number;
 }
 
+export interface VectorConfig {
+  /**
+   * `off` never loads an embedder. `auto` switches on once the store reaches
+   * `minRecords`. `on` always uses vectors when an embedder is configured.
+   */
+  mode: 'off' | 'auto' | 'on';
+  /** Record count at which `auto` flips on. */
+  minRecords: number;
+  /** 0 = pure BM25, 1 = pure vector. Blended into the relevance signal. */
+  blend: number;
+  /** How many records to embed per warm-up batch. */
+  batchSize: number;
+}
+
+export interface ConsolidationConfig {
+  /**
+   * Whether a new claim is merged into / allowed to supersede an existing one.
+   *
+   * Default true, but it is the least proven mechanism in this library: a 2026
+   * study found consolidation quality scores did not predict downstream accuracy
+   * (Spearman rho -0.24), and an independent replication found a nightly
+   * consolidation cycle made results slightly worse. `npm run bench` measures it
+   * on a synthetic corpus so you can decide for your own workload.
+   */
+  enabled: boolean;
+}
+
 export interface MnemoConfig {
   decay: DecayConfig;
   retrieve: RetrieveConfig;
   budget: BudgetConfig;
+  vector: VectorConfig;
+  consolidation: ConsolidationConfig;
   /** Soft cap on `abstract`. Longer abstracts are rejected at write time. */
   abstractMaxChars: number;
   /** Days after which a verbatim/episodic body is condensed and archived. */
@@ -217,6 +246,15 @@ export const DEFAULT_CONFIG: MnemoConfig = {
     taskCanvas: 800,
     userMessage: 2000,
   },
+  vector: {
+    mode: 'auto',
+    minRecords: 5000,
+    blend: 0.4,
+    batchSize: 64,
+  },
+  consolidation: {
+    enabled: true,
+  },
   abstractMaxChars: 60,
   verbatimTtlDays: 90,
   offloadThresholdTokens: 400,
@@ -231,6 +269,8 @@ export function mergeConfig(partial?: Partial<MnemoConfig>): MnemoConfig {
       limit: partial.retrieve?.limit ?? DEFAULT_CONFIG.retrieve.limit,
     },
     budget: { ...DEFAULT_CONFIG.budget, ...(partial.budget ?? {}) },
+    vector: { ...DEFAULT_CONFIG.vector, ...(partial.vector ?? {}) },
+    consolidation: { ...DEFAULT_CONFIG.consolidation, ...(partial.consolidation ?? {}) },
     abstractMaxChars: partial.abstractMaxChars ?? DEFAULT_CONFIG.abstractMaxChars,
     verbatimTtlDays: partial.verbatimTtlDays ?? DEFAULT_CONFIG.verbatimTtlDays,
     offloadThresholdTokens:

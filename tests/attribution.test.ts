@@ -85,3 +85,11 @@ test('contradicts ignores claims about different subjects', () => {
   const b = { subject: 'user:b', abstract: '不喜欢详细解释' };
   assert.equal(contradicts(a, b), false);
 });
+
+test('contradicts still fires when the predicate itself contains a negation', () => {
+  // Regression: scanning for a negation marker anywhere made both sides look
+  // negative ("不打 bundle"), so a real change of mind was read as agreement.
+  const a = { subject: 'user:a', abstract: '构建工具：金呈喜欢用 tsc 直接编译不打 bundle' };
+  const b = { subject: 'user:a', abstract: '构建工具：金呈不喜欢用 tsc 直接编译不打 bundle' };
+  assert.equal(contradicts(a, b), true);
+});

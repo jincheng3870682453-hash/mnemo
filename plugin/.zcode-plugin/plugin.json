@@ -1,0 +1,42 @@
+{
+  "name": "mnemo",
+  "version": "0.2.0",
+  "description": "Token-thrifty, human-like long-term memory for AI agents: gist encoding, power-law forgetting, cue-triggered recall and prospective memory, exposed as six MCP tools.",
+  "description_i18n": {
+    "en": "Token-thrifty, human-like long-term memory for AI agents: gist encoding, power-law forgetting, cue-triggered recall and prospective memory, exposed as six MCP tools.",
+    "zh-CN": "给 AI agent 的省 token 类人长期记忆：要点编码、幂律遗忘、情境触发召回与前瞻记忆，以六个 MCP 工具暴露。"
+  },
+  "author": {
+    "name": "金呈"
+  },
+  "license": "MIT",
+  "keywords": [
+    "memory",
+    "mcp",
+    "context-engineering",
+    "token-efficiency",
+    "agent"
+  ],
+  "commands": "payload/commands",
+  "skills": "payload/skills",
+  "userConfig": {
+    "store_dir": {
+      "title": "Memory store",
+      "description": "Directory for the Markdown memory store. Relative paths resolve against the project root.",
+      "type": "string",
+      "default": ".mnemo"
+    },
+    "user_principal": {
+      "title": "User principal",
+      "description": "Identity bound to preferences, e.g. user:alice. Required for a remembered preference to be allowed to change behaviour.",
+      "type": "string",
+      "default": "user:me"
+    },
+    "vector_mode": {
+      "title": "Semantic search",
+      "description": "off | auto | on. auto enables embeddings only above 5000 records. Leave off unless you have measured a benefit.",
+      "type": "string",
+      "default": "off"
+    }
+  }
+}

@@ -34,7 +34,7 @@ test('the index directory is disposable: deleting it loses no knowledge', async 
 
     const reopened = await Mnemo.open(dir);
     assert.equal(reopened.all().length, 1);
-    const hits = reopened.recall({ query: '客套' });
+    const hits = await reopened.recall({ query: '客套' });
     assert.equal(hits[0].record.name, 'k1');
   } finally {
     await cleanup();

@@ -38,6 +38,10 @@ export interface RetrieveQuery {
   /** Include second-hand records. They are still not decision-eligible. */
   includeHearsay?: boolean;
   excludeTypes?: readonly string[];
+  /** Pre-computed semantic scores in 0..1, keyed by record name. */
+  vectorHits?: Map<string, number>;
+  /** How much vector relevance outweighs BM25 when both are present. 0..1. */
+  vectorBlend?: number;
 }
 
 export interface Signals {
@@ -89,6 +93,8 @@ export function retrieve(engine: RetrievalEngine, query: RetrieveQuery): ScoredM
 
   const goalTokens = query.goal ? tokenize(query.goal) : [];
   const cues = query.cues ?? [];
+  const vectorHits = query.vectorHits;
+  const vectorBlend = vectorHits ? Math.min(1, Math.max(0, query.vectorBlend ?? 0.4)) : 0;
   const scored: ScoredMemory[] = [];
 
   for (const record of engine.records) {
@@ -119,7 +125,12 @@ export function retrieve(engine: RetrievalEngine, query: RetrieveQuery): ScoredM
 
     const recency = retention(record, now, cfg.decay);
     const importance = Math.min(1, (record.salience / 10) * record.weight);
-    const relevance = bm25Hits.get(record.name) ?? 0;
+
+    // Relevance blends lexical and semantic evidence. With no embedder,
+    // vectorBlend is 0 and this reduces exactly to BM25.
+    const lexical = bm25Hits.get(record.name) ?? 0;
+    const semantic = vectorHits?.get(record.name) ?? 0;
+    const relevance = vectorBlend * semantic + (1 - vectorBlend) * lexical;
 
     const goalTokensForRecord = [...tokenize(record.future.join(' ')), ...tokenize(record.abstract)];
     const goalOverlap = goalTokens.length > 0 ? tokenOverlap(goalTokens, goalTokensForRecord) : 0;
@@ -127,7 +138,7 @@ export function retrieve(engine: RetrievalEngine, query: RetrieveQuery): ScoredM
 
     // Nothing distinguishes this record: it was not asked for, not cued, not
     // goal-relevant. Skipping keeps the candidate set honest and the prompt small.
-    if (!bm25Hits.has(record.name) && cueScore === 0 && goalOverlap === 0) continue;
+    if (lexical === 0 && semantic === 0 && cueScore === 0 && goalOverlap === 0) continue;
 
     const score =
       weights.recency * recency +

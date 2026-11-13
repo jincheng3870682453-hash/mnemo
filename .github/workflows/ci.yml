@@ -1,0 +1,121 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test · node ${{ matrix.node }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20', '22', '24']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run test:only
+
+  test-windows:
+    name: test · windows · node 24
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      # The store writes Markdown with platform separators; this job is what
+      # catches a path bug that only shows up off POSIX.
+      - run: npm run build
+      - run: npm run test:only
+
+  mcp-smoke:
+    name: mcp handshake over stdio
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      # A real pipe, not a library call: this is what proves the framing works.
+      - name: handshake
+        run: |
+          set -euo pipefail
+          STORE="$(mktemp -d)"
+          printf '%s\n' \
+            '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}' \
+            '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+            '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
+            | MNEMO_DIR="$STORE" node dist/src/mcp/server.js > responses.txt 2> server.log
+          test "$(wc -l < responses.txt)" -eq 2
+          grep -q '"serverInfo":{"name":"mnemo"' responses.txt
+          grep -q '"tools":\[' responses.txt
+          node -e "const fs=require('fs');for(const l of fs.readFileSync('responses.txt','utf8').trim().split('\n'))JSON.parse(l)"
+          echo "handshake ok"
+
+  plugin-fresh:
+    name: committed plugin payload matches source
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      # The payload is committed so the plugin installs straight from the repo.
+      # This is what stops it degrading into a stale copy of an older build.
+      - run: npm run build:plugin
+      - run: git diff --exit-code -- plugin
+
+  bench:
+    name: consolidation benchmark
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      # A regression guard, not a quality gate: the benchmark asserts that
+      # consolidation still removes stale beliefs and still shrinks the store.
+      - name: run
+        run: |
+          set -euo pipefail
+          node dist/bench/consolidation.js 20 | tee bench.txt
+          grep -q 'stale beliefs at top-1: 20 -> 0' bench.txt
+
+  package:
+    name: package contents
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm pack --dry-run

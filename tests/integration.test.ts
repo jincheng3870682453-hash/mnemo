@@ -26,7 +26,7 @@ test('end-to-end: write, recall pointers, read detail, assemble context', async 
       group: 'work',
     });
 
-    const hits = m.recall({ query: '开场白 说话风格' });
+    const hits = await m.recall({ query: '开场白 说话风格' });
     assert.ok(hits.length > 0);
     assert.equal(hits[0].record.name, 'pref-direct');
     assert.ok(hits[0].l0.includes('pref-direct') || hits[0].l0.includes('facts/'));
@@ -38,7 +38,7 @@ test('end-to-end: write, recall pointers, read detail, assemble context', async 
     assert.ok(detail.body.includes('很高兴为您服务'));
     assert.ok(detail.tokens > 0);
 
-    const ctx = m.bootContext({ userMessage: '帮我看看这个设计' });
+    const ctx = await m.bootContext({ userMessage: '帮我看看这个设计' });
     assert.ok(ctx.tokens.total > 0);
     assert.ok(ctx.tokens.cacheableRatio >= 0);
     assert.ok(ctx.prefix.includes('你不喜欢') || ctx.prefix.includes('# Memory'));
@@ -81,11 +81,11 @@ test('changing your mind supersedes instead of overwriting', async () => {
     assert.ok(second.record.links.includes('tone-v1'), 'the new belief must link back');
 
     // Today: only the new belief.
-    const today = m.recall({ query: '详细解释' });
+    const today = await m.recall({ query: '详细解释' });
     assert.deepEqual(today.map((h) => h.record.name), ['tone-v2']);
 
     // Historical view: the old belief was true then.
-    const past = m.recall({
+    const past = await m.recall({
       query: '详细解释',
       asOf: new Date(Date.now() - 60_000),
     });
@@ -113,7 +113,7 @@ test('second-hand preferences are stored but cannot steer behaviour', async () =
     assert.equal(result.record.type, 'hearsay');
     assert.ok(result.notes.some((n) => n.includes('demoted')));
 
-    const hits = m.recall({ query: 'X 工具', includeHearsay: true });
+    const hits = await m.recall({ query: 'X 工具', includeHearsay: true });
     const hit = hits.find((h) => h.record.name === 'heard-tool');
     assert.ok(hit);
     assert.equal(hit.decisionEligible, false);
@@ -204,7 +204,7 @@ test('context stays small: pointers cost an order of magnitude less than bodies'
     }
 
     const naive = m.all().reduce((sum, r) => sum + estimateTokens(r.body), 0);
-    const ctx = m.bootContext({ userMessage: '继续' });
+    const ctx = await m.bootContext({ userMessage: '继续' });
     const pointerCost = ctx.tokens.suffix;
 
     assert.ok(naive > 1000, `body corpus should be large, got ${naive}`);

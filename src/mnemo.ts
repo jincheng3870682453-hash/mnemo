@@ -30,6 +30,8 @@ import { erodeConfidence, reinforce, tier as retentionTier } from './memory/deca
 import { coerceCue, harvestCues, mergeCues } from './memory/cues.js';
 import { bestMatch, mergeIntoRecord, refineWithLLM, supersedeRecord } from './memory/consolidation.js';
 import { retrieve, renderL0, type RetrieveQuery, type ScoredMemory } from './retrieval/retrieve.js';
+import { VectorIndex } from './retrieval/vector-index.js';
+import type { Embedder } from './retrieval/embedder.js';
 import { assemble, buildMemoryIndex, stableToolBlock, type AssembledContext, type ContextInput } from './context/assembler.js';
 import { maybeOffload, readOffload as readOffloadFile, type OffloadReadOptions, type OffloadResult } from './context/offload.js';
 import { dueIntentions, encodeTrigger, isUpcoming, renderPending, type Trigger } from './prospective/intentions.js';
@@ -42,6 +44,11 @@ import { nowIso } from './util/time.js';
 export interface MnemoOptions {
   config?: Partial<MnemoConfig>;
   llm?: LLM;
+  /**
+   * Optional embedding provider. Without one, `vector.mode` has no effect and
+   * retrieval stays lexical. See retrieval/embedder.ts for why that is the default.
+   */
+  embedder?: Embedder;
   /** Principal representing the assistant itself. Defaults to `agent:self`. */
   agentPrincipal?: string;
   /** Default principal of the human(s) this agent serves, if there is one. */
@@ -103,13 +110,16 @@ export class Mnemo {
   readonly userPrincipal: string | null;
 
   private llm: LLM;
+  private embedder: Embedder | null;
   private index = new BM25Index();
+  private vectors = new VectorIndex();
   private records = new Map<string, MemoryRecord>();
 
   private constructor(store: FileStore, config: MnemoConfig, options: MnemoOptions) {
     this.store = store;
     this.config = config;
     this.llm = options.llm ?? new NullLLM();
+    this.embedder = options.embedder ?? null;
     this.agentPrincipal = options.agentPrincipal ?? 'agent:self';
     this.userPrincipal = options.userPrincipal ?? null;
   }
@@ -120,10 +130,11 @@ export class Mnemo {
     await store.init();
     const mnemo = new Mnemo(store, mergeConfig(options.config), options);
     await mnemo.reload();
+    if (mnemo.vectorEnabled()) await mnemo.warmVectors();
     return mnemo;
   }
 
-  /** Re-read every record from disk and rebuild the index. Discards nothing. */
+  /** Re-read every record from disk and rebuild the indexes. Discards nothing. */
   async reload(): Promise<void> {
     const records = await this.store.loadAll();
     this.records.clear();
@@ -132,6 +143,77 @@ export class Mnemo {
       this.records.set(record.name, record);
       this.index.add(record.name, tokenize(indexableText(record)));
     }
+  }
+
+  // --------------------------------------------------------------- vectors --
+
+  /** Whether semantic retrieval is active given the config, embedder and store size. */
+  vectorEnabled(): boolean {
+    if (!this.embedder) return false;
+    const { mode, minRecords } = this.config.vector;
+    if (mode === 'off') return false;
+    if (mode === 'on') return true;
+    return this.records.size >= minRecords;
+  }
+
+  private vectorPath(): string {
+    return path.join(this.store.root, 'index', 'vectors.jsonl');
+  }
+
+  /**
+   * Load persisted vectors and embed anything missing.
+   *
+   * Vectors are a disposable cache keyed by embedder id: switching models
+   * invalidates them rather than silently mixing incompatible spaces. Returns
+   * how many records were newly embedded.
+   */
+  async warmVectors(): Promise<number> {
+    if (!this.embedder) return 0;
+    const embedderId = this.embedder.id;
+    this.vectors = await VectorIndex.load(this.vectorPath(), embedderId);
+
+    const missing = [...this.records.values()].filter((r) => !this.vectors.has(r.name));
+    if (missing.length === 0) return 0;
+
+    let embedded = 0;
+    const batchSize = Math.max(1, this.config.vector.batchSize);
+    for (let i = 0; i < missing.length; i += batchSize) {
+      const batch = missing.slice(i, i + batchSize);
+      const texts = batch.map((r) => `${r.abstract}\n${r.body}`);
+      const vectors = await this.embedder.embed(texts);
+      for (let j = 0; j < batch.length; j++) {
+        const vec = vectors[j];
+        if (Array.isArray(vec) && vec.length > 0) {
+          this.vectors.add(batch[j].name, vec, embedderId);
+          embedded++;
+        }
+      }
+    }
+    await this.vectors.save(this.vectorPath(), embedderId);
+    return embedded;
+  }
+
+  /** Embed one record after a write. Silently skips if vectors are off. */
+  private async embedRecord(record: MemoryRecord): Promise<void> {
+    if (!this.embedder || !this.vectorEnabled()) return;
+    try {
+      const [vec] = await this.embedder.embed([`${record.abstract}\n${record.body}`]);
+      if (Array.isArray(vec) && vec.length > 0) {
+        this.vectors.add(record.name, vec, this.embedder.id);
+      }
+    } catch {
+      // An embedding failure must not fail a write. BM25 still works.
+    }
+  }
+
+  /** Diagnostics for the CLI and for `mnemo stats`. */
+  vectorStatus(): { enabled: boolean; embedder: string | null; indexed: number; records: number } {
+    return {
+      enabled: this.vectorEnabled(),
+      embedder: this.embedder?.id ?? null,
+      indexed: this.vectors.size,
+      records: this.records.size,
+    };
   }
 
   /**
@@ -201,9 +283,13 @@ export class Mnemo {
     });
 
     // ---- consolidation ----------------------------------------------------
-    const candidates = [...this.records.values()].filter(
-      (r) => !r.invalidAt && r.name !== record.name && r.type === record.type,
-    );
+    // Disabling this writes every claim as a new record: duplicates pile up and a
+    // changed mind leaves two live beliefs. `npm run bench` quantifies the cost.
+    const candidates = this.config.consolidation.enabled
+      ? [...this.records.values()].filter(
+          (r) => !r.invalidAt && r.name !== record.name && r.type === record.type,
+        )
+      : [];
     const match = bestMatch(record, candidates);
     let relation: WriteResult['relation'] = 'created';
     const invalidated: string[] = [];
@@ -251,6 +337,7 @@ export class Mnemo {
 
     const relPath = await this.store.save(record);
     this.reindexOne(record);
+    await this.embedRecord(record);
 
     return { record, relation, invalidated, notes, path: relPath };
   }
@@ -270,8 +357,11 @@ export class Mnemo {
   /**
    * Return L0 pointers. Cheap by construction: abstracts and paths, ~30 tokens
    * each. Bodies are never included.
+   *
+   * Async because semantic retrieval needs to embed the query. When no embedder
+   * is configured the promise resolves immediately on the lexical path.
    */
-  recall(query: RetrieveQuery = {}): ScoredMemory[] {
+  async recall(query: RetrieveQuery = {}): Promise<ScoredMemory[]> {
     const engine = {
       records: [...this.records.values()],
       index: this.index,
@@ -282,10 +372,29 @@ export class Mnemo {
         return this.store.relativePathFor(record).split(path.sep).join('/');
       },
     };
-    const hits = retrieve(engine, query);
+
+    let vectorHits: Map<string, number> | undefined;
+    if (this.embedder && this.vectorEnabled() && query.query?.trim() && this.vectors.size > 0) {
+      try {
+        const [qVec] = await this.embedder.embed([query.query]);
+        if (Array.isArray(qVec) && qVec.length > 0) {
+          vectorHits = new Map(this.vectors.search(qVec, 200).map((h) => [h.id, h.norm]));
+        }
+      } catch {
+        // Vector search is an enhancement: on failure, fall back to lexical.
+        vectorHits = undefined;
+      }
+    }
+
+    const hits = retrieve(engine, {
+      ...query,
+      vectorHits,
+      vectorBlend: this.config.vector.blend,
+    });
+
     for (const hit of hits) {
       reinforce(hit.record, new Date(), this.config.decay);
-      void this.store.save(hit.record).catch(() => {
+      void this.store.update(hit.record).catch(() => {
         // A failed access-count update must never fail a read.
       });
     }
@@ -293,9 +402,10 @@ export class Mnemo {
   }
 
   /** Same as recall, but returns the rendered one-line handles. */
-  recallLines(query: RetrieveQuery = {}): string[] {
+  async recallLines(query: RetrieveQuery = {}): Promise<string[]> {
     const now = new Date();
-    return this.recall(query).map((hit) => renderL0(hit, now));
+    const hits = await this.recall(query);
+    return hits.map((hit) => renderL0(hit, now));
   }
 
   // ----------------------------------------------------------------- read --
@@ -391,6 +501,7 @@ export class Mnemo {
       archived.push(record.name);
       this.records.delete(record.name);
       this.index.remove(record.name);
+      this.vectors.remove(record.name);
     }
     return { archived, scanned: live.length };
   }
@@ -525,9 +636,15 @@ export class Mnemo {
    * A one-shot summary used by the CLI and by tests: what a model would see at
    * session start, and how much of it is cacheable.
    */
-  bootContext(options: { system?: string; userMessage?: string } = {}): AssembledContext {
+  bootContext(options: { system?: string; userMessage?: string } = {}): Promise<AssembledContext> {
+    return this.buildBootContext(options);
+  }
+
+  private async buildBootContext(
+    options: { system?: string; userMessage?: string } = {},
+  ): Promise<AssembledContext> {
     const pending = this.pendingLines();
-    const retrieved = this.recallLines({ limit: this.config.retrieve.limit });
+    const retrieved = await this.recallLines({ limit: this.config.retrieve.limit });
     return this.buildContext({
       system: options.system ?? DEFAULT_SYSTEM,
       memoryIndex: this.memoryIndex(),

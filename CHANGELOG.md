@@ -4,6 +4,67 @@ All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] — 2026-11-13
+
+Renamed to `mnemo-memory` (the bare name `mnemo` is taken on npm) and shipped the
+MCP server, the plugin package, a consolidation benchmark and CI.
+
+### Added
+
+**MCP server** (`mnemo-memory` binary, and the `mnemo-memory/mcp` subpath export)
+- Newline-delimited JSON-RPC 2.0 over stdio, no dependencies, no SDK
+- Six tools: `memory_recall`, `memory_read`, `memory_write`, `memory_forget`,
+  `memory_intend`, `memory_context`
+- Config entirely through `MNEMO_*` environment variables
+- `serve()` takes an injectable stream + sink, so framing is testable in-process
+- Diagnostics go to stderr; stdout carries protocol messages only
+
+**Plugin**
+- `plugin/` with `.zcode-plugin/` and `.claude-plugin/` manifests and `.mcp.json`
+- `skills/mnemo-memory/SKILL.md` — how to use memory well (write thresholds,
+  read depth, attribution, budget notes)
+- `commands/memory-status.md` — `/memory-status`
+- Committed `payload/dist` so the plugin installs straight from the repository
+- `npm run verify:plugin` rebuilds and fails on drift; CI enforces it
+
+**Pluggable semantic retrieval**
+- `Embedder` interface, `OpenAIEmbedder` for any OpenAI-compatible `/embeddings`,
+  and `HashingEmbedder` as an explicitly non-semantic dev stub
+- `VectorIndex`: brute-force cosine, JSONL-persisted, keyed by embedder id so
+  switching models invalidates rather than silently mixing spaces
+- `vector.mode` = `off` | `auto` | `on`, threshold default 5,000 records
+- `recall()` is now async (it may need to embed the query); BM25-only paths still
+  resolve immediately
+
+**Benchmark**
+- `npm run bench` measures consolidation on/off over a 20×4 synthetic corpus:
+  store size, stale beliefs still live, stale top-1 rate, top-1 accuracy,
+  context tokens, merge and supersede counts
+- `consolidation.enabled` config flag, so the least-proven mechanism can be
+  switched off
+
+**CI**
+- GitHub Actions: Node 20/22/24 on Ubuntu, Node 24 on Windows, MCP handshake
+  through a real pipe, plugin payload freshness, benchmark regression, package
+  contents
+- `Publish` workflow on `v*` tags with npm provenance
+
+### Fixed
+
+- `slugify()` collapsed CJK input to its bare ASCII remainder, so
+  `"回复风格-base"` and `"编辑器-base"` both became `base` and records from
+  different topics silently overwrote each other. Non-ASCII input now always
+  carries a hash of the full text.
+- `contradicts()` scanned the whole abstract for negation markers, so a predicate
+  that itself contained one (`…不打 bundle`) made both sides look negative and hid
+  a real change of mind. It now compares similarity after stripping negations and
+  requires the negation counts to differ.
+- `decisionEligible()` only checked `hop` and `type`, while `bindAttribution()`
+  warned that an unbound preference would not be actionable. The check now
+  enforces the subject binding, so the warning is true.
+- In-place updates write to the location discovered by the directory scan
+  (`FileStore.update`) and never construct a path.
+
 ## [0.1.0] — 2026-11-13
 
 First release. Zero runtime dependencies; Node 20+.
@@ -77,3 +138,4 @@ First release. Zero runtime dependencies; Node 20+.
   roughly 5,000 records.
 
 [0.1.0]: https://github.com/jincheng3870682453-hash/mnemo/releases/tag/v0.1.0
+[0.2.0]: https://github.com/jincheng3870682453-hash/mnemo/releases/tag/v0.2.0

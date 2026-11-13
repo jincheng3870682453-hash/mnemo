@@ -1,0 +1,5 @@
+{
+  "name": "mnemo-plugin-payload",
+  "private": true,
+  "type": "module"
+}

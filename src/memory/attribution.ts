@@ -20,6 +20,7 @@
  */
 
 import type { MemoryRecord, MemoryType, Principal } from '../types.js';
+import { tokenize, tokenOverlap } from '../util/text.js';
 
 export interface AttributionInput {
   type?: MemoryType;
@@ -114,13 +115,35 @@ export function attributionLabel(record: Pick<MemoryRecord, 'hop' | 'type' | 'su
   return `relayed x${record.hop} (speaker=${from}, subject=${about}) — not decision-eligible`;
 }
 
-/** True when two records disagree about the same thing in incompatible ways. */
+const NEGATION_RE = /不|没|无|never|not|n't|dislike|hate|讨厌|拒绝/gi;
+
+/** Count negation markers without letting them pollute the comparison. */
+function negationCount(text: string): number {
+  return (text.match(NEGATION_RE) ?? []).length;
+}
+
+function stripNegation(text: string): string {
+  return text.replace(NEGATION_RE, '');
+}
+
+/**
+ * True when two records disagree about the same thing in incompatible ways.
+ *
+ * Comparing raw text for negation markers is not enough: a predicate can contain
+ * one innocuously ("compiles without bundling" → 不打 bundle), which makes both
+ * sides look negative and hides a real change of mind. So the comparison is:
+ * strip every negation marker from both sides, require the *stripped* claims to
+ * still be similar, and require the negation counts to differ. That detects
+ * "likes X" vs "doesn't like X" even when X itself contains a negation.
+ */
 export function contradicts(
   a: Pick<MemoryRecord, 'subject' | 'abstract'>,
   b: Pick<MemoryRecord, 'subject' | 'abstract'>,
 ): boolean {
   if (a.subject && b.subject && a.subject !== b.subject) return false;
-  const negA = /不|没|never|not|dislike|讨厌|拒绝/i.test(a.abstract);
-  const negB = /不|没|never|not|dislike|讨厌|拒绝/i.test(b.abstract);
-  return negA !== negB;
+  if (negationCount(a.abstract) === negationCount(b.abstract)) return false;
+
+  const sa = tokenize(stripNegation(a.abstract));
+  const sb = tokenize(stripNegation(b.abstract));
+  return tokenOverlap(sa, sb) >= 0.5;
 }

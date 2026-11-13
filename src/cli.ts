@@ -143,7 +143,7 @@ async function main(): Promise<void> {
 
     case 'recall': {
       const asOf = str(flags, 'as-of');
-      const hits = mnemo.recall({
+      const hits = await mnemo.recall({
         query: str(flags, 'query'),
         goal: str(flags, 'goal'),
         limit: num(flags, 'limit'),
@@ -227,7 +227,7 @@ async function main(): Promise<void> {
     }
 
     case 'ctx': {
-      const assembled = mnemo.bootContext({
+      const assembled = await mnemo.bootContext({
         system: str(flags, 'system'),
         userMessage: str(flags, 'user') ?? '',
       });

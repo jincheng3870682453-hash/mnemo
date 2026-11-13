@@ -1,0 +1,184 @@
+#!/usr/bin/env node
+/**
+ * MCP server entry point.
+ *
+ * Configured entirely through environment variables so it can be launched by any
+ * MCP host (ZCode, Claude Code, Cursor, …) without a config file:
+ *
+ *   MNEMO_DIR               store directory            (default ./.mnemo)
+ *   MNEMO_AGENT_PRINCIPAL   identity of the assistant   (default agent:self)
+ *   MNEMO_USER_PRINCIPAL    identity of the human       (default unset)
+ *   MNEMO_VECTOR_MODE       off | auto | on             (default auto)
+ *   MNEMO_VECTOR_MIN        record count for auto       (default 5000)
+ *   MNEMO_LLM_BASE_URL      OpenAI-compatible endpoint   (optional)
+ *   MNEMO_LLM_MODEL         model id                     (optional)
+ *   MNEMO_LLM_API_KEY_ENV   env var holding the key      (default MNEMO_LLM_API_KEY)
+ *   MNEMO_EMBED_BASE_URL    OpenAI-compatible /embeddings (optional)
+ *   MNEMO_EMBED_MODEL       embedding model id            (optional)
+ *
+ * Nothing is written to stdout except protocol messages. Diagnostics go to
+ * stderr, because a stray console.log corrupts the JSON-RPC stream.
+ *
+ * The transport is injectable on purpose: `serve()` takes a readable stream and a
+ * sink, so the framing and dispatch path is testable in-process without spawning
+ * a child process.
+ */
+
+import { createInterface } from 'node:readline';
+import path from 'node:path';
+import type { Readable } from 'node:stream';
+import { Mnemo } from '../mnemo.js';
+import type { MnemoConfig } from '../types.js';
+import { OpenAICompatibleLLM } from '../llm/openai.js';
+import { OpenAIEmbedder, type Embedder } from '../retrieval/embedder.js';
+import type { LLM } from '../llm/types.js';
+import { decodeLine, handleMessage, SERVER_NAME, type ServerContext } from './protocol.js';
+
+export const VERSION = '0.2.0';
+
+export interface Sink {
+  write(chunk: string): unknown;
+}
+
+export interface ServeOptions {
+  mem: Mnemo;
+  /** Input stream of newline-delimited JSON. */
+  input: Readable | NodeJS.ReadableStream;
+  /** Where responses go. Must accept a single line per call. */
+  output: Sink;
+  version?: string;
+  /** Diagnostics. Defaults to stderr. Never stdout. */
+  onLog?: (message: string) => void;
+}
+
+export function env(name: string): string | undefined {
+  const value = process.env[name];
+  return value && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function stderrLog(message: string): void {
+  process.stderr.write(`[${SERVER_NAME}] ${message}\n`);
+}
+
+export function buildLlm(): LLM | undefined {
+  const baseUrl = env('MNEMO_LLM_BASE_URL');
+  const model = env('MNEMO_LLM_MODEL');
+  if (!baseUrl || !model) return undefined;
+  try {
+    return new OpenAICompatibleLLM({
+      baseUrl,
+      model,
+      apiKeyEnv: env('MNEMO_LLM_API_KEY_ENV') ?? 'MNEMO_LLM_API_KEY',
+    });
+  } catch (err) {
+    stderrLog(`LLM disabled: ${err instanceof Error ? err.message : String(err)}`);
+    return undefined;
+  }
+}
+
+export function buildEmbedder(): Embedder | undefined {
+  const baseUrl = env('MNEMO_EMBED_BASE_URL');
+  const model = env('MNEMO_EMBED_MODEL');
+  if (!baseUrl || !model) return undefined;
+  try {
+    return new OpenAIEmbedder({
+      baseUrl,
+      model,
+      apiKeyEnv: env('MNEMO_EMBED_API_KEY_ENV') ?? env('MNEMO_LLM_API_KEY_ENV') ?? 'MNEMO_LLM_API_KEY',
+    });
+  } catch (err) {
+    stderrLog(`embeddings disabled: ${err instanceof Error ? err.message : String(err)}`);
+    return undefined;
+  }
+}
+
+export function configFromEnv(): Partial<MnemoConfig> {
+  const mode = env('MNEMO_VECTOR_MODE');
+  const minRecords = env('MNEMO_VECTOR_MIN');
+  const config: Partial<MnemoConfig> = {};
+  if (mode === 'off' || mode === 'auto' || mode === 'on' || minRecords) {
+    config.vector = {
+      mode: mode === 'off' || mode === 'on' ? mode : 'auto',
+      minRecords: minRecords ? Number.parseInt(minRecords, 10) : 5000,
+      blend: 0.4,
+      batchSize: 64,
+    };
+  }
+  return config;
+}
+
+/**
+ * Run the line loop until the input ends.
+ *
+ * One JSON object per line in, one per line out. Never pretty-print: embedded
+ * newlines would break framing, which is the classic way to corrupt a stdio MCP
+ * server.
+ */
+export function serve(options: ServeOptions): Promise<void> {
+  const log = options.onLog ?? stderrLog;
+  const ctx: ServerContext = { mem: options.mem, version: options.version ?? VERSION };
+  const rl = createInterface({ input: options.input as Readable, crlfDelay: Infinity });
+
+  let pending = Promise.resolve();
+
+  rl.on('line', (line: string) => {
+    const decoded = decodeLine(line);
+    if (!decoded.ok) {
+      options.output.write(`${JSON.stringify(decoded.response)}\n`);
+      return;
+    }
+    // Serialise handling so responses keep their request order.
+    pending = pending
+      .then(() => handleMessage(ctx, decoded.value))
+      .then((response) => {
+        if (response) options.output.write(`${JSON.stringify(response)}\n`);
+      })
+      .catch((err: unknown) => {
+        log(`handler crashed: ${err instanceof Error ? err.message : String(err)}`);
+      });
+  });
+
+  return new Promise<void>((resolve) => {
+    rl.on('close', () => {
+      void pending.then(() => {
+        log('stdin closed, exiting');
+        resolve();
+      });
+    });
+  });
+}
+
+export async function startServer(): Promise<void> {
+  const dir = path.resolve(env('MNEMO_DIR') ?? './.mnemo');
+
+  let mem: Mnemo;
+  try {
+    mem = await Mnemo.open(dir, {
+      config: configFromEnv(),
+      llm: buildLlm(),
+      embedder: buildEmbedder(),
+      agentPrincipal: env('MNEMO_AGENT_PRINCIPAL') ?? 'agent:self',
+      userPrincipal: env('MNEMO_USER_PRINCIPAL'),
+    });
+  } catch (err) {
+    stderrLog(`failed to open store at ${dir}: ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(1);
+  }
+
+  stderrLog(
+    `ready · store=${dir} · records=${mem.metrics().total} · vectors=${mem.vectorStatus().enabled}`,
+  );
+
+  await serve({ mem, input: process.stdin, output: process.stdout });
+}
+
+// Only auto-start when executed directly, so tests and imports never bind stdio.
+const invokedDirectly =
+  process.argv[1] !== undefined && /server\.(js|ts)$/.test(process.argv[1]);
+
+if (invokedDirectly) {
+  startServer().catch((err: unknown) => {
+    stderrLog(`fatal: ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(1);
+  });
+}

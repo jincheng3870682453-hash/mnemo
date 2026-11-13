@@ -7,9 +7,12 @@ export function isValidSlug(name: string): boolean {
 }
 
 /**
- * Turn arbitrary text into a slug. CJK has no ASCII form, so CJK input keeps a
- * short stable hash suffix — the name stays a valid filename while remaining
- * collision-resistant.
+ * Turn arbitrary text into a slug.
+ *
+ * Non-ASCII input cannot be represented as a slug, and stripping it is not safe:
+ * `"回复风格-base"` and `"编辑器-base"` would both collapse to `base` and silently
+ * overwrite each other. So whenever the input contains CJK, the ASCII remainder is
+ * always suffixed with a hash of the *full* text, which keeps names distinct.
  */
 export function slugify(text: string, fallback = 'memory'): string {
   const ascii = text
@@ -17,13 +20,13 @@ export function slugify(text: string, fallback = 'memory'): string {
     .normalize('NFKD')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
-    .slice(0, 48);
+    .slice(0, 40);
 
   const hasCjk = /[\u3400-\u9FFF\u3040-\u30FF\uAC00-\uD7AF]/.test(text);
+  const stem = ascii.length > 0 ? ascii : fallback;
+  if (hasCjk) return `${stem}-${shortHash(text)}`;
   if (ascii.length >= 2) return ascii;
-  const base = fallback;
-  const hash = shortHash(text);
-  return hasCjk ? `${base}-${hash}` : `${fallback}-${hash}`;
+  return `${fallback}-${shortHash(text)}`;
 }
 
 /** FNV-1a, 6 hex chars. Cheap, stable, good enough for names and refs. */

@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "mnemo": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "${ZCODE_PLUGIN_ROOT}/payload/dist/mcp/server.js"
+      ],
+      "cwd": "${ZCODE_PROJECT_DIR}",
+      "env": {
+        "MNEMO_DIR": "${user_config.store_dir}",
+        "MNEMO_USER_PRINCIPAL": "${user_config.user_principal}",
+        "MNEMO_VECTOR_MODE": "${user_config.vector_mode}"
+      },
+      "timeoutMs": 60000
+    }
+  }
+}

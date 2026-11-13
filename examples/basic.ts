@@ -54,7 +54,7 @@ async function main(): Promise<void> {
 
     // ---- 3. recall returns pointers, not content ---------------------------
     console.log('\n[recall: 说话风格]');
-    for (const line of mem.recallLines({ query: '说话风格 开场白' })) {
+    for (const line of await mem.recallLines({ query: '说话风格 开场白' })) {
       console.log(' ', line);
     }
 
@@ -81,9 +81,9 @@ async function main(): Promise<void> {
     console.log('\n[supersede]', reversed.relation, '→ invalidated', reversed.invalidated);
 
     const asOfLastWeek = new Date(Date.now() - 2 * 86_400_000);
-    const then = mem.recall({ query: '详细解释', asOf: asOfLastWeek });
+    const then = await mem.recall({ query: '详细解释', asOf: asOfLastWeek });
     console.log('[as-of 2 days ago] believed:', then.map((h) => h.record.abstract).join(' / ') || '(nothing yet)');
-    const today = mem.recall({ query: '详细解释' });
+    const today = await mem.recall({ query: '详细解释' });
     console.log('[today] believes:', today.map((h) => h.record.abstract).join(' / '));
 
     // ---- 6. prospective memory: it remembers *for* you ---------------------
@@ -100,7 +100,7 @@ async function main(): Promise<void> {
     console.log('[event trigger on "审计"] fired:', mem.due(new Date(), '聊聊审计吧').length);
 
     // ---- 7. what a model actually sees at the start of a session -----------
-    const ctx = mem.bootContext({ userMessage: '帮我看看这个设计' });
+    const ctx = await mem.bootContext({ userMessage: '帮我看看这个设计' });
     console.log('\n[context] tokens:', ctx.tokens);
     console.log('[context] cacheable prefix:\n' + ctx.prefix);
 

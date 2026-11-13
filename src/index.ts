@@ -33,6 +33,8 @@ export type {
   DecayConfig,
   RetrieveConfig,
   BudgetConfig,
+  VectorConfig,
+  ConsolidationConfig,
   WriteInput,
   Cue,
   Principal,
@@ -57,6 +59,10 @@ export { createRecord, indexableText, RecordValidationError } from './memory/rec
 
 export { retrieve, renderL0 } from './retrieval/retrieve.js';
 export type { RetrieveQuery, ScoredMemory, Signals, RetrievalEngine } from './retrieval/retrieve.js';
+export { cosine, normalize, OpenAIEmbedder, HashingEmbedder } from './retrieval/embedder.js';
+export type { Embedder, OpenAIEmbedderOptions } from './retrieval/embedder.js';
+export { VectorIndex } from './retrieval/vector-index.js';
+export type { VectorHit } from './retrieval/vector-index.js';
 
 export { assemble, trimToBudget, stableToolBlock, buildMemoryIndex } from './context/assembler.js';
 export type { AssembledContext, ContextInput } from './context/assembler.js';
@@ -74,8 +80,7 @@ export {
 } from './prospective/intentions.js';
 export type { Trigger, TriggerKind } from './prospective/intentions.js';
 
-export { NullLLM } from './llm/types.js';
-export type { LLM, LLMRequest } from './llm/types.js';
+export { NullLLM } from './llm/types.js';export type { LLM, LLMRequest } from './llm/types.js';
 export { OpenAICompatibleLLM } from './llm/openai.js';
 export type { OpenAICompatibleOptions } from './llm/openai.js';
 export { GIST_PROMPT, RECONSTRUCT_PROMPT, CONSOLIDATE_PROMPT } from './llm/prompts.js';
