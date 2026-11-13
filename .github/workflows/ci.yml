@@ -88,6 +88,23 @@ jobs:
       - run: npm run build:plugin
       - run: git diff --exit-code -- plugin
 
+  dsh-go-plugin:
+    name: dsh-go plugin manifest and handlers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      # Lints the dshGo manifest against the constraints published in the app's
+      # own plugin skill, then taps every handler through a fake bridge. The
+      # authoritative checker is the app's kit, which needs a phone; this is the
+      # CI-able subset.
+      - run: npm run check:dsh-go
+      - run: git diff --exit-code -- dsh-go
+
   bench:
     name: consolidation benchmark
     runs-on: ubuntu-latest

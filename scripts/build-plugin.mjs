@@ -21,6 +21,8 @@ const root = path.resolve(here, '..');
 
 const from = path.join(root, 'dist', 'src');
 const to = path.join(root, 'plugin', 'payload', 'dist');
+/** The DSH Go plugin bundles the library too, so a phone install needs no build. */
+const dshGoLib = path.join(root, 'dsh-go', 'lib', 'mnemo');
 
 /**
  * Copy only what a runtime needs. Source maps and `.d.ts` roughly quadruple the
@@ -58,6 +60,11 @@ async function main() {
     'utf8',
   );
 
+  // Same treatment for the DSH Go plugin: compiled JS only, no maps or types.
+  await rm(dshGoLib, { recursive: true, force: true });
+  await mkdir(dshGoLib, { recursive: true });
+  await copyJs(from, dshGoLib);
+
   const pkg = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
 
   // Keep the two manifests in lockstep with the package version.
@@ -68,7 +75,14 @@ async function main() {
     await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
   }
 
+  // The DSH Go plugin is its own npm package; keep its version in step too.
+  const dshGoPkgPath = path.join(root, 'dsh-go', 'package.json');
+  const dshGoPkg = JSON.parse(await readFile(dshGoPkgPath, 'utf8'));
+  dshGoPkg.version = pkg.version;
+  await writeFile(dshGoPkgPath, `${JSON.stringify(dshGoPkg, null, 2)}\n`, 'utf8');
+
   console.log(`staged plugin payload → ${path.relative(root, to)} (v${pkg.version})`);
+  console.log(`staged dsh-go library → ${path.relative(root, dshGoLib)}`);
 }
 
 main().catch((err) => {

@@ -4,6 +4,34 @@ All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] — 2026-11-13
+
+DSH Go 插件。`dsh-go/` 是一个独立的 npm 包（`mnemo-dsh-go`），按 DSH Go 的原生插件协议声明界面。
+
+### Added
+
+**DSH Go 原生插件**（`dsh-go/`，独立包 `mnemo-dsh-go`）
+- 三个界面，都只放指针：输入框上方一行状态（`记忆 12 · 惦记 2`）、两条胶囊动作
+  （记住这句 / 想起来）、一个面板（最近记录、可作依据数、一键自检）。
+- `remember` 同步返回 toast，写入在后台完成——不占用 3 秒的效果窗口。
+- `recall` 走协议里的延后效果（`pending` + `result`），先跑元记忆探针，确认「不知道」
+  就直接说没有，省掉一次完整检索；命中则把 L0 指针插回输入框，**绝不自动发送**。
+- 面板视图只用 v1 组件，数据里只有摘要、类型、年龄，没有正文。
+- 库的编译产物随包内嵌（`lib/mnemo/`），手机上安装不需要构建步骤。
+
+**离线插件检查器**（`npm run check:dsh-go`）
+- 按官方 `dsh-go-plugin` 技能文档的约束做 lint：插槽上限、标签字数、id 字符集与
+  唯一性、序列化 ≤16 KiB、`strip` 与 `panel` 的交叉引用、effect 白名单。
+- 然后用假桥接真点一遍每个 handler：空草稿被拒、写入生效、状态条 ≤24 字、
+  延后效果返回可插入内容、面板视图可渲染且 ≤32 KiB。
+- 权威检查器仍是 App 自带的 `kit/bin/check.mjs`；这个脚本让 CI 在没有手机的情况下
+  也能拦住同一类错误，规则是从文档逐条复刻的，不是猜的。
+
+### Changed
+
+- `npm run verify:plugin` 同时校验 `plugin/` 与 `dsh-go/` 的产物是否与源码一致。
+- 根 README 的「五种用法」加入 DSH Go。
+
 ## [0.4.0] — 2026-11-13
 
 Two mechanisms borrowed from my own other projects, both of which close a hole
@@ -225,3 +253,4 @@ First release. Zero runtime dependencies; Node 20+.
 [0.2.0]: https://github.com/jincheng3870682453-hash/mnemo/releases/tag/v0.2.0
 [0.3.0]: https://github.com/jincheng3870682453-hash/mnemo/releases/tag/v0.3.0
 [0.4.0]: https://github.com/jincheng3870682453-hash/mnemo/releases/tag/v0.4.0
+[0.5.0]: https://github.com/jincheng3870682453-hash/mnemo/releases/tag/v0.5.0

@@ -74,9 +74,30 @@ await mem.restore('pref-direct');
 |---|---|---|
 | **库** | 自己写 agent 循环 | `npm i mnemo-memory` |
 | **MCP 服务** | ZCode / Claude Code / Cursor | `npx mnemo-memory`（见下） |
+| **DSH Go 插件** | 手机上用 DeepSeek Harness | `dsh plugin --profile web add ./dsh-go` |
 | **插件** | 想开箱即用 | 从本仓库安装 `plugin/` |
 | **CLI** | 手工查看与追加 | `npx mnemo-memory --help` |
 | **子路径** | 只要协议层 | `mnemo-memory/mcp` |
+
+<details>
+<summary><b>DSH Go 插件（手机原生界面）</b></summary>
+
+`dsh-go/` 是独立的 npm 包 `mnemo-dsh-go`，按 DSH Go 的原生插件协议声明界面。
+App **只画 JSON，不执行插件代码**，所以这个插件只返回三种东西：一行状态、两条胶囊动作、一个面板。
+
+| 界面 | 内容 |
+|---|---|
+| 状态条 | `记忆 12 · 惦记 2` |
+| 胶囊 | **记住这句**（存草稿）、**想起来**（探针→检索→插回输入框） |
+| 面板 | 最近记住了什么、多少条可作依据、一键自检 |
+
+```sh
+dsh plugin --profile web add ./dsh-go
+```
+
+数据在 `$DSH_HOME/dsh-go/memory/`，仍是 Markdown。插件不联网、不调模型。
+
+</details>
 
 <details>
 <summary><b>MCP 配置</b></summary>

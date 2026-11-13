@@ -1,6 +1,6 @@
 {
   "name": "mnemo-memory",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Token-thrifty, human-like long-term memory for AI agents. Zero runtime dependencies. Ships an MCP server.",
   "type": "module",
   "main": "./dist/src/index.js",
@@ -34,7 +34,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "build:plugin": "npm run build && node scripts/build-plugin.mjs",
-    "verify:plugin": "npm run build:plugin && git diff --exit-code --stat -- plugin",
+    "check:dsh-go": "npm run build:plugin --silent && node scripts/check-dsh-go.mjs",
+    "verify:plugin": "npm run build:plugin && git diff --exit-code --stat -- plugin dsh-go",
     "test": "npm run build && node --test dist/tests/*.test.js",
     "test:only": "node --test dist/tests/*.test.js",
     "bench": "npm run build --silent && node dist/bench/consolidation.js",

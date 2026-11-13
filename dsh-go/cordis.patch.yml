@@ -1,0 +1,4 @@
+# id: any unique id; name: must equal "name" in package.json.
+- insert:
+    - id: mnemo-dsh-go
+      name: mnemo-dsh-go
