@@ -41,6 +41,12 @@ export const TOOLS = [
                         'this query, and at most a pointer. Cheaper than a full recall. Use it when you are ' +
                         'about to say "I do not know" and want to check first.',
                 },
+                mention: {
+                    type: 'boolean',
+                    description: 'Renewal mode: the conversation merely named a memory and you are not asking a ' +
+                        'question about it. Renews the matched records so they stay recallable, and ' +
+                        'returns one summary line instead of pointers. Costs almost nothing.',
+                },
             },
         },
     },
@@ -206,6 +212,17 @@ export async function callTool(mem, name, input) {
         case 'memory_recall': {
             if (asBoolean(input, 'probe') && asString(input, 'query')) {
                 return text(mem.feelLine(asString(input, 'query')));
+            }
+            if (asBoolean(input, 'mention')) {
+                const report = await mem.reinforce({
+                    query: asString(input, 'query'),
+                    limit: asNumber(input, 'limit'),
+                });
+                if (report.renewed.length === 0) {
+                    return text('Mentioned nothing that memory holds. Nothing was renewed.');
+                }
+                const list = report.renewed.map((r) => `- ${r.abstract} (${r.name})`).join('\n');
+                return text(`Renewed ${report.renewed.length} memory(ies), stability ×${report.growth}:\n${list}`);
             }
             const hits = await mem.recall({
                 query: asString(input, 'query'),

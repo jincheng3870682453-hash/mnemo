@@ -4,6 +4,53 @@ All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] — 2026-11-14
+
+三个来自同类系统（事件图谱记忆）的机制，全部以"零依赖、零模型调用"的形态落地。
+每一件都先问过：重机制里真正值钱的是什么？能不能用文件和几行算术表达？
+
+### Added
+
+**提及续期 `mem.reinforce()`**
+- 对话里*提到*一条记忆但没有检索它，也会让它更难被忘记——被想到就该更持久，
+  但比完整 recall 弱：stability ×1.15（recall 是 ×1.3），且只此一步。
+- 两条输入路径：`names`（精确点名）与 `query`（BM25 匹配，只有
+  `signals.relevance > 0` 的记录算数——重要性权重再高也不能冒充被提及）。
+- 不触碰竞争抑制、不自适应调参状态、不走向量；写回沿用 `store.update`。
+- 配置：`mention.growth` / `mention.limit`（默认 1.15 / 3）。
+- MCP 面零增长：`memory_recall` 新增 `mention: true` 旗标，返回一行汇总。
+  依旧是六个工具，刻意。
+
+**组收敛 `mem.canonGroup()` / `mem.groups()`**
+- 长寿命存储会长出近重复的组名（`userTone` / `usertone` / `user-tone`），
+  每个分叉都在无辜地切碎候选集。借鉴事件图谱记忆里"概念池不得无序膨胀"
+  的唯一值得偷的想法，用一份 JSON 而不是一个 LLM 来实现。
+- `<root>/groups.json`：别名 → 规范组的折叠表。键大小写不敏感
+  （`userTone` 与 `usertone` 折成同一个键），值保持原样大小写。
+- `canonGroup(alias, canonical, { move: true })` 物理搬移现有文件；目标里
+  同名文件**报告冲突而不覆盖**——记录身份就是文件名，覆盖会毁掉其中一个。
+- `groups.json` 刻意放在 `index/` 之外：折叠表是知识，删索引不得丢知识
+  （`store.test.ts` 的不变式因此依然成立）。
+- `groups()` 列出各组存活记录数与折叠进来的别名——碎片化视图，合并前先看它。
+
+### Fixed
+
+- **`store.update()` 现在是原子写**（temp + rename）。合并、推翻、续期、
+  自检置信度回写走的全是它——此前崩溃会留下半条记录，而这是所有写路径里
+  最高频的一条。`save()` 早已原子；现在两者一致。
+- `snapshot()`（合并前快照）、`archive()` 兜底写、`writeSessionFile()`（工具
+  输出落盘）同样补上 temp + rename。
+- 启动时清扫崩溃残留的 `.tmp-*` 孤儿（只动超过 60 秒的，并发写者的
+  in-flight 临时文件不会被误删）。
+- `archive()` 优先使用目录扫描发现的实际位置，而非按 `record.group` 重新
+  推导——组折叠生效后，记录可能物理上住在规范目录里，而 frontmatter 仍
+  写着别名。
+
+### Tests
+
+- 新增 `tests/mention.test.ts`（5）、`tests/atomicity.test.ts`（5）、
+  `tests/groups.test.ts`（5），共 178 个测试全部通过。
+
 ## [0.7.1] — 2026-11-13
 
 ### Fixed

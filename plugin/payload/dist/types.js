@@ -67,6 +67,10 @@ export const DEFAULT_CONFIG = {
         fadeDays: 5,
         maxPenalty: 0.4,
     },
+    mention: {
+        growth: 1.15,
+        limit: 3,
+    },
     adaptive: {
         enabled: false,
         alpha: 1.0,
@@ -90,6 +94,7 @@ export function mergeConfig(partial) {
         vector: { ...DEFAULT_CONFIG.vector, ...(partial.vector ?? {}) },
         consolidation: { ...DEFAULT_CONFIG.consolidation, ...(partial.consolidation ?? {}) },
         competition: { ...DEFAULT_CONFIG.competition, ...(partial.competition ?? {}) },
+        mention: { ...DEFAULT_CONFIG.mention, ...(partial.mention ?? {}) },
         adaptive: { ...DEFAULT_CONFIG.adaptive, ...(partial.adaptive ?? {}) },
         abstractMaxChars: partial.abstractMaxChars ?? DEFAULT_CONFIG.abstractMaxChars,
         verbatimTtlDays: partial.verbatimTtlDays ?? DEFAULT_CONFIG.verbatimTtlDays,

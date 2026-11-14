@@ -242,6 +242,23 @@ export interface CompetitionConfig {
   maxPenalty: number;
 }
 
+/**
+ * Mention-based reinforcement: the weak sibling of the spacing effect.
+ *
+ * A conversation can *name* a memory without ever asking a question about it.
+ * That mention deserves something — being thought about makes a memory more
+ * durable — but far less than a full recall earns, and it must never fire on
+ * records whose only match was their importance weight. `growth` is applied to
+ * stability (recall uses `decay.stabilityGrowth`, deliberately higher); `limit`
+ * caps how many records one mention may renew.
+ */
+export interface MentionConfig {
+  /** Stability multiplier on a mere mention. Below `decay.stabilityGrowth` on purpose. */
+  growth: number;
+  /** Max records one reinforce() call may renew. */
+  limit: number;
+}
+
 /** Recursive partial: lets a caller override one nested knob without restating it. */
 export type DeepPartial<T> = {
   [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K];
@@ -277,6 +294,8 @@ export interface MnemoConfig {
   vector: VectorConfig;
   consolidation: ConsolidationConfig;
   competition: CompetitionConfig;
+  /** Mention-based renewal knobs, see reinforce(). */
+  mention: MentionConfig;
   /** Optional online tuning of decay/retrieval params. Off by default. */
   adaptive: AdaptiveConfig;
   /** Soft cap on `abstract`. Longer abstracts are rejected at write time. */
@@ -323,6 +342,10 @@ export const DEFAULT_CONFIG: MnemoConfig = {
     fadeDays: 5,
     maxPenalty: 0.4,
   },
+  mention: {
+    growth: 1.15,
+    limit: 3,
+  },
   adaptive: {
     enabled: false,
     alpha: 1.0,
@@ -344,8 +367,9 @@ export function mergeConfig(partial?: DeepPartial<MnemoConfig>): MnemoConfig {
     },
     budget: { ...DEFAULT_CONFIG.budget, ...(partial.budget ?? {}) },
     vector: { ...DEFAULT_CONFIG.vector, ...(partial.vector ?? {}) },
-    consolidation: { ...DEFAULT_CONFIG.consolidation, ...(partial.consolidation ?? {}) },
-    competition: { ...DEFAULT_CONFIG.competition, ...(partial.competition ?? {}) },
+  consolidation: { ...DEFAULT_CONFIG.consolidation, ...(partial.consolidation ?? {}) },
+  competition: { ...DEFAULT_CONFIG.competition, ...(partial.competition ?? {}) },
+  mention: { ...DEFAULT_CONFIG.mention, ...(partial.mention ?? {}) },
     adaptive: { ...DEFAULT_CONFIG.adaptive, ...(partial.adaptive ?? {}) },
     abstractMaxChars: partial.abstractMaxChars ?? DEFAULT_CONFIG.abstractMaxChars,
     verbatimTtlDays: partial.verbatimTtlDays ?? DEFAULT_CONFIG.verbatimTtlDays,

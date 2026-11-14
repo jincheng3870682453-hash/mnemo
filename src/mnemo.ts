@@ -104,6 +104,49 @@ export interface ConsolidateReport {
   scanned: number;
 }
 
+export interface ReinforceInput {
+  /** Text that mentioned the memory. Lexical match against the BM25 index. */
+  query?: string;
+  /** Explicit record names to renew — the precise path when the caller knows. */
+  names?: string[];
+  /** Override the stability multiplier for this call. 1 = no-op. */
+  growth?: number;
+  /** Max records to renew (default `config.mention.limit`). */
+  limit?: number;
+}
+
+export interface ReinforceReport {
+  /** Records renewed, best match first. */
+  renewed: Array<{
+    name: string;
+    abstract: string;
+    /** Stability after the multiplier was applied. */
+    stability: number;
+    lastAccess: string;
+  }>;
+  /** The multiplier actually applied — echoes `growth` back for logging. */
+  growth: number;
+  /** How many genuine matches were seen before the limit cut in. */
+  matched: number;
+}
+
+export interface GroupInfo {
+  group: string;
+  /** Live records in the group. */
+  count: number;
+  /** Alias names folded into this group, from groups.json. */
+  aliases: string[];
+}
+
+export interface MergeGroupsReport {
+  alias: string;
+  canonical: string;
+  /** Files physically moved into the canonical directory. */
+  moved: string[];
+  /** Files left in place because the target name already exists there. */
+  conflicts: string[];
+}
+
 export interface CheckpointInput {
   /** One line describing what this stretch of conversation was about. */
   summary: string;
@@ -622,6 +665,119 @@ export class Mnemo {
     const now = new Date();
     const hits = await this.recall(query);
     return hits.map((hit) => renderL0(hit, now));
+  }
+
+  /**
+   * Mention-based renewal: the conversation *named* a memory without asking a
+   * question about it. Being thought about makes a memory more durable, but a
+   * mention earns far less than a retrieval — the stability multiplier is
+   * `config.mention.growth` (1.15 by default, vs 1.3 for a full recall), and
+   * nothing else happens: no competition suppression, no bandit feedback, no
+   * vector round trip.
+   *
+   * Two input paths. `names` is the precise one, for when the caller knows
+   * exactly which records the last turn touched. `query` is the fuzzy one: the
+   * mention text is matched against the BM25 index and only records with a
+   * genuine lexical hit (`signals.relevance > 0`) are renewed — importance or
+   * recency weight alone must never count as being mentioned.
+   */
+  async reinforce(input: ReinforceInput = {}): Promise<ReinforceReport> {
+    const growth = Math.min(2, Math.max(1, input.growth ?? this.config.mention.growth));
+    const limit = Math.max(1, Math.min(20, input.limit ?? this.config.mention.limit));
+    const decayCfg = { ...this.config.decay, stabilityGrowth: growth };
+    const now = new Date();
+    const renewed: ReinforceReport['renewed'] = [];
+    const candidates = new Map<string, MemoryRecord>();
+
+    if (input.names?.length) {
+      for (const raw of input.names) {
+        const safe = matchSafeName(raw);
+        if (!safe) continue;
+        const record = this.find(safe);
+        if (record && !candidates.has(safe)) candidates.set(safe, record);
+      }
+    }
+
+    let matched = candidates.size;
+    const queryText = input.query?.trim();
+    if (queryText && candidates.size < limit) {
+      const engine = {
+        records: [...this.records.values()],
+        index: this.index,
+        config: this.config,
+        pathOf: (name: string): string => {
+          const record = this.find(name);
+          if (!record) return '';
+          return this.store.relativePathFor(record).split(path.sep).join('/');
+        },
+      };
+      const hits = retrieve(engine, { query: queryText, limit: limit * 4 });
+      const mentioned = hits.filter((hit) => hit.signals.relevance > 0);
+      matched = Math.max(matched, mentioned.length);
+      for (const hit of mentioned) {
+        if (candidates.size >= limit) break;
+        candidates.set(hit.record.name, hit.record);
+      }
+    }
+
+    for (const record of candidates.values()) {
+      if (renewed.length >= limit) break;
+      reinforce(record, now, decayCfg);
+      void this.store.update(record).catch(() => undefined);
+      renewed.push({
+        name: record.name,
+        abstract: record.abstract,
+        stability: record.stability,
+        lastAccess: record.lastAccess ?? nowIso(now),
+      });
+    }
+
+    return { renewed, growth, matched };
+  }
+
+  // ---------------------------------------------------------- group folding --
+
+  /** Live groups by size, plus the alias names folded into each. */
+  async groups(): Promise<GroupInfo[]> {
+    return this.store.groupsInfo();
+  }
+
+  /** The alias → canonical map, for inspection. */
+  groupAliases(): Record<string, string> {
+    return this.store.groupAliasMap();
+  }
+
+  /**
+   * Fold a fragmented group name into a canonical one.
+   *
+   * Long-lived stores sprout near-duplicate groups — `userTone`, `user-tone`,
+   * `tone` — and every fork splits the candidate set for no benefit. This
+   * borrows the one idea worth taking from knowledge-graph memories (their
+   * "concept pool must not bloat" constraint) and implements it with a JSON
+   * file instead of an LLM: writes to the alias name land in the canonical
+   * directory from now on, and with `{ move: true }` the existing files move
+   * too. Files whose name already exists in the target are reported, not
+   * clobbered — record identities live in file names, so a clobber would
+   * destroy one of them.
+   */
+  async canonGroup(
+    alias: string,
+    canonical: string,
+    options: { move?: boolean } = {},
+  ): Promise<MergeGroupsReport> {
+    await this.store.registerGroupAlias(alias, canonical);
+    const report: MergeGroupsReport = {
+      alias,
+      canonical: this.store.resolveGroup(canonical),
+      moved: [],
+      conflicts: [],
+    };
+    if (options.move === true) {
+      const moved = await this.store.moveGroup(alias, canonical);
+      report.moved = moved.moved;
+      report.conflicts = moved.conflicts;
+    }
+    return report;
   }
 
   // ----------------------------------------------------------------- read --

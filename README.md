@@ -2,11 +2,11 @@
 
 <img alt="STATUS" src="https://img.shields.io/badge/STATUS-BETA-ff9f1c?style=for-the-badge&labelColor=1a1a2e">
 <img alt="RUNTIME DEPS" src="https://img.shields.io/badge/RUNTIME%20DEPS-ZERO-2ecc71?style=for-the-badge&labelColor=1a1a2e">
-<img alt="TESTS" src="https://img.shields.io/badge/TESTS-156%20PASSING-2ecc71?style=for-the-badge&labelColor=1a1a2e">
+<img alt="TESTS" src="https://img.shields.io/badge/TESTS-178%20PASSING-2ecc71?style=for-the-badge&labelColor=1a1a2e">
 <img alt="LICENSE" src="https://img.shields.io/badge/LICENSE-MIT-4b67b4?style=for-the-badge&labelColor=1a1a2e">
 
 <img alt="NODE" src="https://img.shields.io/badge/NODE-%E2%89%A520-339933?style=for-the-badge&logo=nodedotjs&logoColor=white&labelColor=1a1a2e">
-<img alt="VERSION" src="https://img.shields.io/badge/VERSION-0.6.0-22d3ee?style=for-the-badge&labelColor=1a1a2e">
+<img alt="VERSION" src="https://img.shields.io/badge/VERSION-0.8.0-22d3ee?style=for-the-badge&labelColor=1a1a2e">
 <a href="https://github.com/jincheng3870682453-hash/mnemo/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/jincheng3870682453-hash/mnemo/actions/workflows/ci.yml/badge.svg"></a>
 
 <pre>
@@ -144,6 +144,8 @@ App **只画 JSON，不执行插件代码**。三个界面，都只放指针：
 | 归属绑定 | 分得清谁说的 | 防二手偏好污染决策 |
 | 合并前快照 | 改了主意还记得原来怎么想 | 固化错了能回滚 |
 | 诱饵自检 | "我确定我记得"要经得起检验 | 本地计算，零模型调用 |
+| 提及续期 | 被提到了，哪怕没被问 | 不用全量检索也能保持可达 |
+| 组收敛 | 知识不该碎成一地别名 | 一个 JSON 折叠表，零 LLM |
 | 价值/千 token 装填 | — | 预算买最大价值 |
 
 <details>
